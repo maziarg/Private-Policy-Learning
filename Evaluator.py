@@ -21,57 +21,21 @@ Created on Jan 17, 2016
 from simpleMC import MChain
 from scipy.cluster.hierarchy import maxdists
 class MCPE():
-    def __init__(self,numStates,goalStates=None,featureType='I', gamma=1,maxReward=1,policy="uniform"):
-        self.gamma=gamma
-        self.MaxRewards=maxReward
+    def __init__(self, mdp, featureMatrix, policy):
+        self.gamma=mdp.getGamma()
+        self.MaxRewards=mdp.getMaxReward()
         self.pi=policy
-        self.goalStates=goalStates
-        self.numStates=numStates
+        self.goalStates=mdp.getGoalstates()
+        self.numStates=len(mdp.getStateSpace())
+        self.featureMatrix=featureMatrix
         
-    def TransitionFunction(self, sourceState, destState):
-        if self.pi is "uniform":
-            if destState==sourceState and sourceState!=self.numStates-1:
-                return 1.0/2
-            if sourceState==destState-1 and sourceState!=self.numStates-1:
-                return 1.0/2 
-            if sourceState==self.numStates-1:
-                if sourceState==destState:
-                    return 1
-                else:
-                    return 0
-            else: 
-                return 0
-        else:
-            return 0
-            
-    def featureProducer(self, aggregationFactor, stateSpace):
-        if aggregationFactor==1:
-            return numpy.matrix(numpy.identity(len(stateSpace)), copy=False)
-        else: 
-            aggregatedDim=int(len(stateSpace)/aggregationFactor)
-            aggFeatureMatrix=[[0 for col in range(len(stateSpace))] for row in range(int(aggregatedDim))]
-            k=0
-            for i in range(aggregatedDim):
-                for j in range(len(stateSpace)):
-                    if (j-i)-k==1 or j-i-k==0:
-                        aggFeatureMatrix[i][j]=1
-                    else:
-                        aggFeatureMatrix[i][j]=0
-                k=k+1       
-            featureMatrix=numpy.reshape(aggFeatureMatrix,(aggregatedDim,len(stateSpace))) 
-        return featureMatrix.T
-    
-    def rewardfunc (self, destState, goalstates, maxReward):
-        if destState in goalstates:
-            return maxReward
-        else :
-            return 0
     
     def FirstVisit(self,trajectory, state, gamma):
         sIndexOfTau=0
         count=0
         reward=0
         temp=[]
+        #finding the index of a state in the given trajectory 
         for i in trajectory:
             if state == i[0]:
                 sIndexOfTau=count
@@ -119,25 +83,24 @@ class MCPE():
             i=i+1  
         return Batch
 
-    def FirstVisitMCpolicyevaluation(self,  myMDP, featuresMatrix, batch, gamma, numTrajectories, initStateDist="uniform", pi="uniform"):
-        #RegList=[]
-        #Values = []
-        #ParamVec=[]
+    def FVMCPE(self,  myMDP, featuresMatrix, batch):
+        # TODO: Make it incremental
         FV=[]
         Batch= batch
         S=myMDP.getStateSpace()
         for s in S: 
-            #iterates through trajectories and search for s 
-            state=int(s)
+            #iterates through trajectories and search for state s 
+            s=int(s[0])
             sBatchCount=0
             tempFV=0
-            for i in range(numTrajectories):
+            for i in range(len(batch)):
                 trajectory=[]
-                trajectory=Batch[i][0]  
+                # Zero is used here due to the fact that Batch[i] is an array itself
+                trajectory=Batch[i]  
                 for j in trajectory:
                     #j[0] is the state and j[1] is the collected immediate reward                        
-                    if  state == j[0]:
-                        tempFV= tempFV + self.FirstVisit(trajectory, s, gamma)
+                    if  s == int(j[0]):
+                        tempFV= tempFV + self.FirstVisit(trajectory, s, myMDP.getGamma())
                         sBatchCount=sBatchCount+1
                         break
                     else:
@@ -146,40 +109,26 @@ class MCPE():
                 FV.append([s,0,0])
             else:
                 tempFV=(tempFV/sBatchCount)           
-                FV.append([state,tempFV,sBatchCount]) 
-        #Here I sort in order to make sure that when I multiply by feature matrix I respect the order of states       
-        #firstVisitVecTemp=numpy.sort(FV,0)
+                FV.append([s,tempFV,sBatchCount]) 
+                sBatchCount=0
         firstVisitVecTemp=FV
-        phiT=featuresMatrix.T
-        sSize=len(myMDP.getStateSpace())
-        gammaMatrix= [[ ] for y in range(sSize)]
-        #here I am using uniform initDist and therefore we use 1/myMDP.getState....
+        phiT=featuresMatrix.T        
         FirstVisitVector=[]
         stateApearanceCount=[]
         for i in firstVisitVecTemp:
             FirstVisitVector.append([i[1]])
             stateApearanceCount.append(i[2])
-        for i in range(len(myMDP.getStateSpace())):
-            for j in range(len(myMDP.getStateSpace())):
-                if i is j:
-                    rho=float(1.0/sSize)
-                    gammaMatrix[i].append(rho)
-                else:
-                    gammaMatrix[i].append(0)
-                    
-        invMatrix=numpy.mat(phiT)*numpy.mat(gammaMatrix)
+    
+        invMatrix=numpy.mat(phiT)*numpy.mat(myMDP.getGammaMatrix())
         invMatrix=numpy.mat(invMatrix)*numpy.mat(featuresMatrix)
         invMatrix=invMatrix.I
         temp=numpy.mat(invMatrix)*numpy.mat(phiT)
-        temp1=numpy.mat(temp)*numpy.mat(gammaMatrix)
+        temp1=numpy.mat(temp)*numpy.mat(myMDP.getGammaMatrix())
         temp2=(numpy.reshape(FirstVisitVector, (len(FirstVisitVector),1)))
         ParamVec=numpy.mat(temp1)*numpy.mat(temp2)
-        #ValueCountVec=[]
-        #for i in range(len(myMDP.getStateSpace())):
-        #    ValueCountVec.append([ParamVec[i],stateApearanceCount[i]])
         return [ParamVec, stateApearanceCount,FirstVisitVector]
     
-    def ComputeSmoothBoundv1(self, myMDP, Gamma, countXVec, beta, startDist):
+    def SmootBound_LSW(self, myMDP, Gamma, countXVec, beta, startDist):
         lInfty=int(numpy.linalg.norm(countXVec, Inf))
         k=0
         Vals=[]
@@ -194,7 +143,7 @@ class MCPE():
             Vals.append(temp1)
         upperBound=max(Vals)  
         return upperBound
-    def ComputeSmoothBoundv2(self,featurmatrix, myMDP, countXVec, rho, regCoef,beta,numTrajectories):
+    def SmoothBound_LSL(self,featurmatrix, myMDP, countXVec, rho, regCoef,beta,numTrajectories):
         normPhi=numpy.linalg.norm(featurmatrix)
         maxRho=numpy.linalg.norm(rho,Inf)
         l2Rho=numpy.linalg.norm(rho)
@@ -214,24 +163,16 @@ class MCPE():
         upperBound=max(Vals)  
         return upperBound  
                
-    def DPFVMC1(self, thetaTild, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, initStateDist="uniform", pi="uniform"):
+    def DPLSW(self, thetaTild, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, initStateDist="uniform", pi="uniform"):
         alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
         alpha=alpha/epsilon 
         dim=len(featuresMatrix)
         beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
-        Gamma= [[ ] for y in range(len(myMDP.getStateSpace()))]
-        for i in range(len(myMDP.getStateSpace())):
-            for j in range(len(myMDP.getStateSpace())):
-                if i is j:
-                    rho=(1.0/len(myMDP.getStateSpace()))
-                    Gamma[i].append(rho)
-                else:
-                    Gamma[i].append(0)
-            
+        Gamma= myMDP.getGammaMatrix()
         GammaSqrt= linalg.sqrtm(Gamma)
         GammaSqrtPhi= numpy.mat(GammaSqrt) *numpy.mat(featuresMatrix)
         GammaSqrtPhiInv=GammaSqrtPhi.I 
-        PsiBetaX= self.ComputeSmoothBoundv1(myMDP, Gamma, countXVec, beta, myMDP.startStateDistribution())
+        PsiBetaX= self.SmootBound_LSW(myMDP, Gamma, countXVec, beta, myMDP.startStateDistribution())
         sigmmaX= (alpha*myMDP.getMaxReward())/(1-gamma)
         sigmmaX=sigmmaX*numpy.linalg.norm(GammaSqrtPhiInv)
         sigmmaX=sigmmaX*math.pow(PsiBetaX, .5)
@@ -242,26 +183,19 @@ class MCPE():
         ethaX=numpy.squeeze(numpy.asarray(ethaX))
         thetaTild_priv=thetaTild+ethaX
         return [thetaTild_priv,thetaTild,math.pow(sigmmaX,2)]
-        
-    def DPFVMC2 (self, FirstVisitVector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
-        currentDirecoy=os.getcwd()
-        currentFile1=currentDirecoy+'/Theta_private'+' '+str(numTrajectories)+' '+str(epsilon)+str(delta)+' '+time.strftime("%d")
-        f_tilda=open(currentFile1, 'w')
-        f_tilda.write("__________________Reg Coef:"+str(regCoef)+"__________________________\n")
+    
+    def weighted_dif_L2_norm(self, mdp, v ,vhat):
+        Gamma = mdp.getGammaMatrix()
+        temp=numpy.mat((v-vhat).T)*numpy.mat(Gamma)*numpy.mat((v-vhat))
+        temp=math.sqrt(temp)
+        return temp
 
+
+     
+    def LSL(self,FirstVisitVector, myMDP,featuresMatrix,regCoef,numTrajectories):
         dim=len(featuresMatrix)
         phiT=featuresMatrix.T
-        Rho=numpy.reshape(rho,(len(myMDP.getStateSpace()),1))
-        Gamma_X= [[ ] for y in range(len(myMDP.getStateSpace()))]
-        for i in range(len(myMDP.getStateSpace())):
-            for j in range(len(myMDP.getStateSpace())):
-                if i == j:
-                    temp=float(Rho[i])
-                    temp=float(temp*countXVec[i])
-                    rho=float(temp/numTrajectories)
-                    Gamma_X[i].append(rho)
-                else:
-                    Gamma_X[i].append(0)
+        Gamma_X=myMDP.getGammaMatrix()
         invMatrix=numpy.mat(phiT)*numpy.mat(Gamma_X)
         invMatrix=numpy.mat(invMatrix)*numpy.mat(featuresMatrix)
         temp=regCoef/numTrajectories
@@ -271,14 +205,23 @@ class MCPE():
         invMatrix=invMatrix.I
         temp=numpy.mat(invMatrix)*numpy.mat(phiT)
         temp1=numpy.mat(temp)*numpy.mat(Gamma_X)
-        temp2=(numpy.reshape(FirstVisitVector, (len(FirstVisitVector),1)))
+        temp2=[]
+        for i in range(len(FirstVisitVector)):
+            temp2.append(FirstVisitVector[i][0])
+        temp2=(numpy.reshape(temp2, (len(temp2),1)))
         thetaTil_X=numpy.mat(temp1)*numpy.mat(temp2)
+        return thetaTil_X
+        
+    def DPLSL (self, FirstVisitVector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
+        dim=len(featuresMatrix)
+        Rho=numpy.reshape(rho,(len(rho),1))
+        thetaTil_X= self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories)
         normPhi=numpy.linalg.norm(featuresMatrix)
         maxRho=numpy.linalg.norm(Rho,Inf)
         alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
         alpha=(alpha/epsilon) 
         beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
-        PsiBetaX= self.ComputeSmoothBoundv2(featuresMatrix, myMDP, countXVec, myMDP.startStateDistribution(), regCoef, beta, numTrajectories)
+        PsiBetaX= self.SmoothBound_LSL(featuresMatrix, myMDP, countXVec, myMDP.startStateDistribution(), regCoef, beta, numTrajectories)
         sigma_X=float(2*alpha*myMDP.getMaxReward()*normPhi/(1-myMDP.getGamma()))
         sigma_X=float(sigma_X/(regCoef-maxRho*numpy.math.pow(normPhi, 2)))
         sigma_X=sigma_X*PsiBetaX
@@ -288,12 +231,18 @@ class MCPE():
         thetaTil_X=numpy.squeeze(numpy.asarray(thetaTil_X))
         ethaX=numpy.squeeze(numpy.asarray(ethaX))
         thetaTil_X_priv=thetaTil_X+ethaX
-        for i in range(len(thetaTil_X_priv)):
-            f_tilda.write("%s\n" % thetaTil_X_priv[i])
-        
         return [thetaTil_X_priv, thetaTil_X,math.pow(sigma_X,2)]
     
-    
+    def realV(self,myMDP):
+        R=myMDP.getExpextedRewardVec()
+        P=myMDP.getTransitionMatix()            
+        temp4=myMDP.getGamma()*P 
+        temp5= numpy.identity(len(myMDP.getStateSpace()))
+        temp4=temp5-temp4
+        b = numpy.matrix(numpy.array(temp4))
+        bInv=b.I 
+        V_Real=numpy.mat(bInv)*numpy.mat(R)
+        return V_Real
     
     def dynamicRegCoefGen(self, cFactor, numTrajectories,type):
         if type==1:
@@ -302,9 +251,22 @@ class MCPE():
         else: 
             temp=cFactor*((numTrajectories))
             return temp
+    
     def batchCutoff(self, Batch, numTrajectories):
         miniBatch = [[ ] for y in range(numTrajectories)]
         for i in range(numTrajectories):
             newLine=Batch[i]
             miniBatch[i].append(newLine)
         return miniBatch 
+    
+    def getminLambda(self, myMDP,featurmatrix):
+        normPhi=numpy.linalg.norm(featurmatrix)
+        l = normPhi**2
+        l*=numpy.max(myMDP.startStateDistribution())
+        return l
+    def computeLambdas(self, myMDP, featurmatrix ,coefs,batchSize,p):
+        lambdaS=[]
+        lambdaOffset= self.getminLambda(myMDP, featurmatrix)
+        for i in coefs:
+            lambdaS.append(lambdaOffset + i*(batchSize**p))
+        return lambdaS
