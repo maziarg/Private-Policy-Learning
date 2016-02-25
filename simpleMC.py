@@ -35,7 +35,17 @@ class MChain(object):
         else:
             self.__startStateDist = np.array( startDistribution, copy=True )
         self.__startStateDist.flags.writeable = False
-            
+    def getGoalstates(self):
+        return self.__goalStates        
+    def getGammaMatrix(self):  
+        gammaMatrix= [[ ] for y in range(len(self.__stateSpace))]   
+        for i in range(len(self.__stateSpace)):
+            for j in range(len(self.__stateSpace)):
+                if i is j:
+                    gammaMatrix[i].append(self.__startStateDist[i])
+                else:
+                    gammaMatrix[i].append(0) 
+        return gammaMatrix          
     def _constructTransitionMatrix( self, transitionFunction ):
         S = self.__stateSpace
         T = np.zeros( ( len( S ) , len( S ) ) )
