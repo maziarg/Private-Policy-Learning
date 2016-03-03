@@ -12,6 +12,8 @@ from scipy import  linalg
 from decimal import Decimal
 from sklearn.metrics import mean_squared_error
 from Evaluator import MCPE
+import expParameters
+import mdpParameteres
 
 class experiment():
     def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy):
@@ -49,6 +51,8 @@ class experiment():
             res.append([myMCPE.weighted_dif_L2_norm(mdp,V,FVMC[2]),errls])
         return res
     
+    
+        
     def TransitionFunction(self, sourceState, destState):
         if self.__policy is "uniform":
             if destState==sourceState and sourceState!=len(self.__stateSpace)-1:
@@ -88,66 +92,68 @@ class experiment():
         else :
             return 0
     
-        
+
+def run_lambdaExperiment_LSL(self, experimentList,myMDP_Params,myExp_Params,myMDP):
+        i=0
+        expResults=[]
+        for i in range(len(myExp_Params.experimentBatchLenghts)):
+            expResults.append(experimentList[i].lambdaExperiment_LSL(myMDP,myExp_Params.maxTrajLength, myExp_Params.regCoefs, myExp_Params.pow_exp))
+        ax = plt.gca()
+        ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+        ax.set_xscale('log')
+        realV_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+        for i in range(len(myExp_Params.experimentBatchLenghts)):
+            for j in range(myExp_Params.numRounds):
+                realV_vs_FVMC[i]+=(expResults[i][j][0]/myExp_Params.numRounds)
+        ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
+        plt.show()
+       
 def main():
     #######################MDP Parameters and Experiment setup###############################
-    initDist="uniform"
-    regCoefs=[0.01,0.1,1,10,100,1000,10000]
-    pow_exp=0.4
-    aggregationFactor=1
-    numState= 20
-    numAbsorbingStates=1
+    myExp_Params=expParameters()
+    myMDP_Params=mdpParameteres()
     #if the absorbing state is anything except 19 the trajectory will not terminate
     absorbingStates=[]
-    absorbingStates.append(19)
-    numGoalstates=1
-    maxTrajLength=numState*10
-    minNumberTraj=100
-    numRounds=10
-    lenTrajectories=[100,500,1000,1500,2000,2500,3000,3500,4000,4500,5000] 
-    #discount factor
-    gamma=0.9
-    maxReward=1
+    absorbingStates.append(19)    
     goalStates=[] 
     i=0
-    while i < numGoalstates:
-        sRand=numpy.random.randint(0,numState)
+    while i < myMDP_Params.numGoalstates:
+        sRand=numpy.random.randint(0,myMDP_Params.numState)
         if sRand not in goalStates:
             goalStates.append(sRand)
             i=i+1  
         else:
             continue     
-    stateSpace=numpy.ones(numState)
+    stateSpace=numpy.ones(myMDP_Params.numState)
     #To DO:Fix this part, since states should be in {0,1} 
-    for i in range(numState):
+    for i in range(myMDP_Params.numState):
         stateSpace[i]=i
-    stateSpace=numpy.reshape(stateSpace, (numState,1))
+    stateSpace=numpy.reshape(stateSpace, (myMDP_Params.numState,1))
     ##############################Privacy Parameters###############################
-    epsilon=0.1
-    delta=0.05
+    
     ##############################MCPE Parameters##################################
     lambdaClass='L'
     policy="uniform"
     
-    #####################Generating the feature matrix############################# 
-    myExp=experiment(aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, lenTrajectories[0],policy)
-    featureMatrix=myExp.featureProducer(aggregationFactor, stateSpace)
-
+    #####################Generating the feature matrix#############################
+    myExps=[] 
+    for k in range(len(myExp_Params.experimentBatchLenghts)): 
+        myExps.append(experiment(myExp_Params.aggregationFactor,stateSpace,myExp_Params.epsilon, myExp_Params.delta, lambdaClass, myExp_Params.numRounds, myExp_Params.experimentBatchLenghts[k],policy))
+    featureMatrix=myExps[0].featureProducer(myExp_Params.aggregationFactor, stateSpace)
+    
     
     dim=len(featureMatrix)
     #Starting the MC-Chain construction
-    myMDP = MChain(stateSpace, myExp.TransitionFunction, myExp.rewardfunc, goalStates, absorbingStates, gamma, maxReward)
+    myMDP = MChain(stateSpace, myExps[0].TransitionFunction, myExps[0].rewardfunc, goalStates, absorbingStates, myMDP_Params.gamma, myMDP_Params.maxReward)
   
     #Weight vector is used for averaging
     weightVector=[]
-    for i in range(numState):
+    for i in range(myMDP_Params.numState):
         if i==absorbingStates[0]:
             weightVector.append(0)
         else:
-            weightVector.append(1/(numState-numAbsorbingStates))
-    weightVector=numpy.reshape(weightVector,(numState,1))
-    i=0
-    result= myExp.lambdaExperiment_LSL(myMDP,maxTrajLength, regCoefs, pow_exp)
-
+            weightVector.append(1/(myMDP_Params.numState-myMDP_Params.numAbsorbingStates))
+    weightVector=numpy.reshape(weightVector,(myExp_Params.numState,1))
+    run_lambdaExperiment_LSL(myExps, myMDP_Params, myExp_Params, myMDP)
     
 if __name__ == "__main__": main()
