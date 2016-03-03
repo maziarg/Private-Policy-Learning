@@ -12,8 +12,8 @@ from scipy import  linalg
 from decimal import Decimal
 from sklearn.metrics import mean_squared_error
 from Evaluator import MCPE
-import expParameters
-import mdpParameteres
+from expParams import expParameters
+from mdpParams import mdpParameteres
 
 class experiment():
     def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy):
@@ -93,7 +93,7 @@ class experiment():
             return 0
     
 
-def run_lambdaExperiment_LSL(self, experimentList,myMDP_Params,myExp_Params,myMDP):
+def run_lambdaExperiment_LSL(experimentList,myMDP_Params,myExp_Params,myMDP):
         i=0
         expResults=[]
         for i in range(len(myExp_Params.experimentBatchLenghts)):
@@ -153,7 +153,7 @@ def main():
             weightVector.append(0)
         else:
             weightVector.append(1/(myMDP_Params.numState-myMDP_Params.numAbsorbingStates))
-    weightVector=numpy.reshape(weightVector,(myExp_Params.numState,1))
+    weightVector=numpy.reshape(weightVector,(myMDP_Params.numState,1))
     run_lambdaExperiment_LSL(myExps, myMDP_Params, myExp_Params, myMDP)
     
 if __name__ == "__main__": main()
