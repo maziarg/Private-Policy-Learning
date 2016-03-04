@@ -233,6 +233,28 @@ class MCPE():
         thetaTil_X_priv=thetaTil_X+ethaX
         return [thetaTil_X_priv, thetaTil_X,math.pow(sigma_X,2)]
     
+    def newDPLSL (self, FirstVisitVector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
+        dim=len(featuresMatrix)
+        Rho=numpy.reshape(rho,(len(rho),1))
+        thetaTil_X= self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories)
+        normPhi=numpy.linalg.norm(featuresMatrix)
+        maxRho=numpy.linalg.norm(Rho,Inf)
+        l2Rho=numpy.linalg.norm(Rho)
+        #alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
+        #alpha=(alpha/epsilon) 
+        #beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
+        #PsiBetaX= self.SmoothBound_LSL(featuresMatrix, myMDP, countXVec, myMDP.startStateDistribution(), regCoef, beta, numTrajectories)
+        sigma_X=float(2*myMDP.getMaxReward()*normPhi/(1-myMDP.getGamma()))
+        sigma_X=float(sigma_X/(regCoef-maxRho*numpy.math.pow(normPhi, 2)))
+        sigma_X=sigma_X*normPhi*maxRho*(math.sqrt(numTrajectories)+l2Rho)/(math.sqrt(2*regCoef))
+        cov_X=math.pow(sigma_X,2)*numpy.identity(dim)
+        mean=numpy.zeros(dim)
+        ethaX=numpy.random.multivariate_normal(mean,cov_X)
+        thetaTil_X=numpy.squeeze(numpy.asarray(thetaTil_X))
+        ethaX=numpy.squeeze(numpy.asarray(ethaX))
+        thetaTil_X_priv=thetaTil_X+ethaX
+        return [thetaTil_X_priv, thetaTil_X,math.pow(sigma_X,2)]
+    
     def realV(self,myMDP):
         R=myMDP.getExpextedRewardVec()
         P=myMDP.getTransitionMatix()            
@@ -267,6 +289,6 @@ class MCPE():
     def computeLambdas(self, myMDP, featurmatrix ,coefs,batchSize,p):
         lambdaS=[]
         lambdaOffset= self.getminLambda(myMDP, featurmatrix)
-        for i in coefs:
-            lambdaS.append(lambdaOffset + i*(batchSize**p))
+        for i in range(len(coefs)):
+            lambdaS.append(lambdaOffset + coefs[i]*(batchSize**p))
         return lambdaS
