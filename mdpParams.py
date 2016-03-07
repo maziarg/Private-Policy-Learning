@@ -12,8 +12,8 @@ class mdpParameteres(object):
 
     def __init__(self):
         self.initDist="uniform"
-        self.numState= 20
+        self.numState= 40
         self.numAbsorbingStates=1
-        self.gamma=0.9
+        self.gamma=0.99
         self.maxReward=1
         self.numGoalstates=1
