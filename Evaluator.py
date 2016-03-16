@@ -9,9 +9,13 @@ from sklearn.metrics import mean_squared_error
 from matplotlib.cbook import todatetime
 import os
 import time
+import sys
 from datashape.coretypes import float64
 from decimal import getcontext
-
+from expParams import expParameters
+from mdpParams import mdpParameteres
+import simplejson
+import re
 
 '''
 Created on Jan 17, 2016
@@ -21,13 +25,23 @@ Created on Jan 17, 2016
 from simpleMC import MChain
 from scipy.cluster.hierarchy import maxdists
 class MCPE():
-    def __init__(self, mdp, featureMatrix, policy):
+    def __init__(self, mdp, featureMatrix, policy, batch_gen_trigger="N", huge_batch_name="huge_batch.txt"):
         self.gamma=mdp.getGamma()
         self.MaxRewards=mdp.getMaxReward()
         self.pi=policy
         self.goalStates=mdp.getGoalstates()
         self.numStates=len(mdp.getStateSpace())
         self.featureMatrix=featureMatrix
+        self.huge_batch_name=huge_batch_name
+        self.batch_gen_trigger=batch_gen_trigger
+        #To Do: 200 is set manually here, which is wrong, this needs to be fixed
+        if batch_gen_trigger=="Y":
+            self.InitHugeBatch= self.batchGen(mdp, 200, 5000, self.gamma, self.pi, mdp.startStateDistribution())
+            self.batch_gen_trigger="N"
+        #else:
+        #    Batch_file = open(self.huge_batch_name, "w+")
+        #   self.InitHugeBatch= Batch_file.readlines()
+             
         
     
     def FirstVisit(self,trajectory, state, gamma):
@@ -37,7 +51,7 @@ class MCPE():
         temp=[]
         #finding the index of a state in the given trajectory 
         for i in trajectory:
-            if state == i[0]:
+            if state == i.split('-')[0]:
                 sIndexOfTau=count
                 break
             else:
@@ -45,42 +59,62 @@ class MCPE():
         t=0          
         temp3=int(len(trajectory)-sIndexOfTau)
         while t < temp3 :
-            temp=trajectory[t+sIndexOfTau]
-            reward = reward + temp[1]*pow(gamma,t)
+            if trajectory[t+sIndexOfTau] is '\n':
+                break
+            temp=trajectory[t+sIndexOfTau].split('-')
+            reward = reward + int(temp[1])*pow(gamma,t)
             t=t+1
       
         return reward
                    
     def batchGen(self, MDP,maxTrajectoryLenghth ,numTrajectories, gamma=0.9, pi="uniform", inistStateDist="uniform"):
-        currentDirecoy=os.getcwd()
-        currentFile=currentDirecoy+'/5000_trajectories'+str(time.strftime("%d"))
-        f_Batch= open(currentFile, 'w')
+
+        if os.path.isfile(self.huge_batch_name) and self.batch_gen_trigger=="Y":
+            input_var = input("The file "+ self.huge_batch_name+ " already exists, please enter a new file name for the new batch: ")
+            print ("you entered " + input_var)
+            Batch_file = open(input_var, "w+")
+            self.huge_batch_name=input_var
+        else:
+            if self.batch_gen_trigger=="Y": 
+                Batch_file = open(self.huge_batch_name, "w+")
         Batch = [[ ] for y in range(numTrajectories)]
         i=0
         while i < numTrajectories:  
             sourceState= MDP.sampleStartState()
             nextState=sourceState 
                             
-            j=0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+            j=0 
+            line=[]                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
             while True:
                 #for now it is not working with an input policy
                 temp=MDP.getObsorbingStates()
                 if int(sourceState)==int(temp):
                     r= MDP.getReward(sourceState, nextState)
+                    nextState=int(nextState)
                     Batch[i].append([int(sourceState),r])
+                    sourceState=int(sourceState)
+                    Batch_file.write(str(sourceState)+'-'+str(r)+',')
                     j=0
                     break
                 if j==maxTrajectoryLenghth:
                     j=0
                     break
                 nextState=MDP.sampleNextState(sourceState)
+                nextState=int(nextState)
                 #here I have to generate the reward matrix associated to the MC and the get the reward w.r.t that but I am not doing in the current version
                 r= MDP.getReward(sourceState, nextState)
-                Batch[i].append([int(sourceState),r])
+                Batch[i].append([sourceState,r])
+                sourceState=int(sourceState)
+                Batch_file.write(str(sourceState)+'-'+str(r)+',')
+
+                #Batch_file.write(';')
                 sourceState=nextState   
-                j=j+1   
-            f_Batch.write("%s\n" % Batch[i])          
+                j=j+1  
+            #line= numpy.asarray(line)
+            Batch_file.write("\n")
+            #simplejson.dump("\n", Batch_file)
             i=i+1  
+        Batch_file.close()
         return Batch
 
     def FVMCPE(self,  myMDP, featuresMatrix, batch):
@@ -98,9 +132,10 @@ class MCPE():
                 # Zero is used here due to the fact that Batch[i] is an array itself
                 trajectory=Batch[i]  
                 for j in trajectory:
-                    #j[0] is the state and j[1] is the collected immediate reward                        
-                    if  s == int(j[0]):
-                        tempFV= tempFV + self.FirstVisit(trajectory, s, myMDP.getGamma())
+                    #j[0] is the state and j[1] is the collected immediate reward   
+                    j=j.split('-') 
+                    if  j[0]!='\n' and s == int(j[0]):
+                        tempFV = tempFV + self.FirstVisit(trajectory, s, myMDP.getGamma())
                         sBatchCount=sBatchCount+1
                         break
                     else:
@@ -190,8 +225,6 @@ class MCPE():
         temp=math.sqrt(temp)
         return temp
 
-
-     
     def LSL(self,FirstVisitVector, myMDP,featuresMatrix,regCoef,numTrajectories):
         dim=len(featuresMatrix)
         phiT=featuresMatrix.T
@@ -274,11 +307,16 @@ class MCPE():
             temp=cFactor*((numTrajectories))
             return temp
     
-    def batchCutoff(self, Batch, numTrajectories):
+    def batchCutoff(self, filename, numTrajectories):
         miniBatch = [[ ] for y in range(numTrajectories)]
+        batch_file = open(filename, "r")
         for i in range(numTrajectories):
-            newLine=Batch[i]
-            miniBatch[i].append(newLine)
+            newLine=batch_file.readline()
+            if newLine=="\n":
+                newLine=batch_file.readline()
+        #miniBatch= batch_file.readlines()
+            #newlist= newLine.split (';')
+            miniBatch[i]=newLine.split(',')
         return miniBatch 
     
     def getminLambda(self, myMDP,featurmatrix):
@@ -292,3 +330,68 @@ class MCPE():
         for i in range(len(coefs)):
             lambdaS.append(lambdaOffset + coefs[i]*(batchSize**p))
         return lambdaS
+
+    def computeEligibilities(self, featureMatrix, lambda_coef, trajectory, gamma):
+        dim=len(featureMatrix)
+        upBound=len(trajectory)-1
+        Z=numpy.zeros(shape=(upBound,dim))
+        temp=numpy.zeros((dim,1))
+        temp=numpy.reshape(temp,(dim,1))
+        for i in range(upBound):
+            temp=numpy.zeros(dim)
+            temp=numpy.reshape(temp,(dim,1))
+            for k in range(i):
+                s_k=trajectory[k][0]
+                temp2=featureMatrix[s_k,:]
+                temp2=numpy.reshape(temp2, (dim,1))
+                #temp2= temp2.T
+                temp+=math.pow((lambda_coef*gamma),(i-k))*temp2
+            for k in range(dim):
+                Z[i,k]=temp[k]
+                
+        return Z
+    
+    def compute_LSTD_A_hat(self, trajectory, featureMatrix,gamma, lambdaCoef,stateSpace):
+        dim= featureMatrix.shape[1]
+        A_hat= numpy.zeros(shape=(len(stateSpace),dim))
+        for i in range(len(trajectory)-1):
+            s_i=trajectory[i][0]
+            s_j=trajectory[i+1][0]
+            phi_si=featureMatrix[s_i,:]
+            phi_sj=gamma*featureMatrix[s_j,:]
+            z_i=self.computeEligibilityVector(lambdaCoef, gamma, s_i, dim, featureMatrix)
+            #z_i=z_i.T
+            temp1 = phi_si-phi_sj
+            temp1=temp1
+            temp2=numpy.mat(z_i.T)*numpy.mat(temp1)
+            A_hat+=temp2
+        return 1/(len(trajectory))*A_hat
+    
+    def compute_LSTD_b_hat(self, trajectory, gamma, lambda_coef,featurematrix):
+        dim=featurematrix.shape[1]
+        b= numpy.zeros((1,dim))
+        for i in range(len(trajectory)):
+            b+=self.computeEligibilityVector(lambda_coef, gamma, i,dim,featurematrix)*trajectory[i][1]
+        return b/(len(trajectory)-1)
+    def computeEligibilityVector(self, lambdaCoef, gamma, index,dim,featureMatrix):
+        z_i= numpy.zeros((1,dim))
+        for j in range(index):
+            phi_j=featureMatrix[j][:]
+            temp=math.pow(gamma*lambdaCoef, index-j)
+            z_i+=temp*(phi_j)
+        return z_i
+            
+    
+    def LSTD_lambda(self, featureMatrix, lambda_coef, mdp, trajectory):
+        #eligabilityVMatrix=self.computeEligibilities(featureMatrix, lambda_coef, trajectory, mdp.getGamma())
+        A_hat=self.compute_LSTD_A_hat(trajectory, featureMatrix, mdp.getGamma(), lambda_coef, mdp.getStateSpace())
+        b_hat=self.compute_LSTD_b_hat(trajectory, mdp.getGamma(), lambda_coef, featureMatrix)
+        A_hat=numpy.mat(A_hat)
+        A_hat_inv=linalg.pinv(A_hat)
+        theta_hat_X= numpy.mat(A_hat_inv)*numpy.mat(b_hat.T)
+        return theta_hat_X
+    
+     
+        
+        
+        

@@ -16,7 +16,7 @@ from expParams import expParameters
 from mdpParams import mdpParameteres
 
 class experiment():
-    def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy):
+    def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy="uniform", batch_gen_param="N"):
         self.__Phi=self.featureProducer(aggregationFactor, stateSpace)
         self.__epsilon=epsilon
         self.__delta=delta
@@ -25,7 +25,12 @@ class experiment():
         self.__batchSize=batchSize
         self.__policy=policy
         self.__stateSpace=stateSpace
-        
+        self.__batch_gen_param_trigger=batch_gen_param
+    def getPhi(self):
+        return  self.__Phi  
+    def getPolicy(self):
+        return self.__policy
+    
     def lambdaExperiment_LSL(self, mdp,batchSize,maxTrajectoryLenghth, regCoefs,pow_exp):
         myMCPE=MCPE(mdp,self.__Phi,self.__policy)
         V = myMCPE.realV(mdp)
@@ -34,7 +39,10 @@ class experiment():
         maxR = mdp.getMaxReward()
         res=[]
         for k in range(self.__numrounds):
-            S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            if (self.__batch_gen_param_trigger=="Y"):
+                S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            else:
+                S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
             errls = []
             ridgeParams = myMCPE.computeLambdas(mdp, self.__Phi, regCoefs, self.__batchSize, pow_exp)
@@ -51,6 +59,38 @@ class experiment():
             res.append([myMCPE.weighted_dif_L2_norm(mdp,V,FVMC[2]),errls])
         return res
     
+    def lambdaExperiment_GS_LSL(self, myMCPE, mdp,batchSize,maxTrajectoryLenghth, regCoefs,pow_exp):
+        myMCPE=myMCPE
+        V = myMCPE.realV(mdp)
+        dim = len(self.__Phi)
+        rho = mdp.startStateDistribution()
+        maxR = mdp.getMaxReward()
+        res=[]
+        for k in range(self.__numrounds):
+            if (self.__batch_gen_param_trigger=="Y"):
+                S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            else:
+                S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
+            FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
+            errls = []
+            ridgeParams = myMCPE.computeLambdas(mdp, self.__Phi, regCoefs, self.__batchSize, pow_exp)
+            for i in range(len(ridgeParams)):
+                tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParams[i], len(S))
+                VL = self.__Phi*tL
+                dpLSL_smoothed=myMCPE.DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParams[i], len(S), rho, self.__policy)
+                dpLSL_GS= myMCPE.newDPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParams[i], len(S), rho, self.__policy)
+                temp5=reshape(dpLSL_smoothed[0], (len(dpLSL_smoothed[0]),1))
+                temp6=reshape(dpLSL_GS[0], (len(dpLSL_GS[0]),1))
+                dpVL_smoothed = self.__Phi*temp5
+                dpVL_GS=self.__Phi*temp6
+                diff_V_VL=myMCPE.weighted_dif_L2_norm(mdp, V, VL)
+                diff_V_dpVL_smoothed=myMCPE.weighted_dif_L2_norm(mdp,V,dpVL_smoothed)
+                diff_V_dpVL_GS=myMCPE.weighted_dif_L2_norm(mdp,V,dpVL_GS)
+                errls.append([ridgeParams[i], diff_V_VL, diff_V_dpVL_smoothed,diff_V_dpVL_GS])
+                
+            res.append([myMCPE.weighted_dif_L2_norm(mdp,V,FVMC[2]),errls])
+        return res
+    
     def newGS_LSL_experiments(self,batchSize,mdp,maxTrajectoryLenghth, regCoef,pow_exp):
         myMCPE=MCPE(mdp,self.__Phi,self.__policy)
         V = myMCPE.realV(mdp)
@@ -58,7 +98,10 @@ class experiment():
         ridgeParam=myMCPE.computeLambdas(mdp, self.__Phi, regCoef, batchSize, pow_exp)
         err_new_lsl=[]
         for k in range(self.__numrounds):
-            S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            if (self.__batch_gen_param_trigger=="Y"):
+                S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            else:
+                S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
             tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParam[0], batchSize)
             VL = self.__Phi*tL
@@ -115,20 +158,47 @@ class experiment():
     
 
 def run_lambdaExperiment_LSL(experimentList,myMDP_Params,myExp_Params,myMDP):
-        i=0
-        expResults=[]
-        for i in range(len(myExp_Params.experimentBatchLenghts)):
-            expResults.append(experimentList[i].lambdaExperiment_LSL(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength, myExp_Params.regCoefs, myExp_Params.pow_exp))
-        ax = plt.gca()
-        ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
-        ax.set_xscale('log')
-        realV_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
-        i=0
-        for i in range(len(myExp_Params.experimentBatchLenghts)):
+    i=0
+    expResults=[]
+    for i in range(len(myExp_Params.experimentBatchLenghts)):
+        expResults.append(experimentList[i].lambdaExperiment_LSL(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength, myExp_Params.regCoefs, myExp_Params.pow_exp))
+    ax = plt.gca()
+    ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    ax.set_xscale('log')
+    realV_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    i=0
+    for i in range(len(myExp_Params.experimentBatchLenghts)):
+        for j in range(myExp_Params.numRounds):
+            realV_vs_FVMC[i]+=(expResults[i][j][0]/myExp_Params.numRounds)
+    ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
+    plt.show()
+
+def run_lambdaExperiment_GS_LSL(myMCPE, experimentList,myMDP_Params, myExp_Params, myMDP):
+    i=0
+    expResults=[]
+    for i in range(len(myExp_Params.experimentBatchLenghts)):
+        expResults.append(experimentList[i].lambdaExperiment_GS_LSL(myMCPE, myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength, myExp_Params.regCoefs, myExp_Params.pow_exp))
+    ax = plt.gca()
+    ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    realV_vs_FVMC=numpy.zeros(len(myExp_Params.regCoefs))
+    diff_V_dpVL_smoothed=numpy.zeros(len(myExp_Params.regCoefs))
+    diff_V_dpVL_GS=numpy.zeros(len(myExp_Params.regCoefs))
+    regCoefVals=numpy.zeros(len(myExp_Params.regCoefs))
+    i=0
+    #for i in range(len(myExp_Params.experimentBatchLenghts)):
+    for k in range(len(myExp_Params.experimentBatchLenghts)):
+        for i in range(len(myExp_Params.regCoefs)):
             for j in range(myExp_Params.numRounds):
-                realV_vs_FVMC[i]+=(expResults[i][j][0]/myExp_Params.numRounds)
-        ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
-        plt.show()
+                diff_V_dpVL_smoothed[i]+=(expResults[k][j][1][i][2]/myExp_Params.numRounds)
+                diff_V_dpVL_GS[i]+=(expResults[k][j][1][i][3]/myExp_Params.numRounds)
+                regCoefVals[i]=expResults[k][0][1][i][0]
+        ax.plot(regCoefVals,diff_V_dpVL_smoothed)
+        ax.plot(regCoefVals,diff_V_dpVL_GS,'r--')
+        ax.legend(["diff_V_dpVL_smoothed, "+" m: "+str(myExp_Params.experimentBatchLenghts[k])," diff_V_dpVL_GS"],loc=1)
+    plt.show()
+
 def run_newGS_LSL_experiments(experimentList,myMDP_Params,myExp_Params,myMDP):   
     i=0
     regCoef=[0.5]
@@ -188,7 +258,7 @@ def run_newGS_LSL_experiments(experimentList,myMDP_Params,myExp_Params,myMDP):
     
 def run_newGS_LSL_vs_SmoothLSL_experiments(experimentList,myMDP_Params,myExp_Params,myMDP):   
     i=0
-    regCoef=[0.5]
+    regCoef=[100]
     expResults=[]
     #expSmoothLSL_Resualts=[]
     for i in range(len(myExp_Params.experimentBatchLenghts)):
@@ -258,27 +328,39 @@ def run_newGS_LSL_vs_SmoothLSL_experiments(experimentList,myMDP_Params,myExp_Par
     plt.ylabel('W-RMSE')
     plt.xlabel('log(m)')
     plt.legend(["True vs. GS-DPLSL","True vs. Smoothed-DPLSL" ],loc=7)
-    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", \lambda= 0.5 m^"+str(myExp_Params.pow_exp))
+    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", \lambda= 100 m^"+str(myExp_Params.pow_exp))
     #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
     plt.show()
 
+def run_lstdExperiment(myMDP_Params, myExp_Params,myMDP,lambda_coef):
+    batchSize=100
+    policy="uniform"
+    lambdaClass='L'
+    stateSpace=myMDP.getStateSpace()
+    myExp= experiment(myExp_Params.aggregationFactor,stateSpace,myExp_Params.epsilon, myExp_Params.delta, lambdaClass, myExp_Params.numRounds, batchSize,policy)
+    myMCPE=MCPE(myMDP,myExp.getPhi(),myExp.getPolicy())
+    data=myMCPE.batchGen(myMDP, 200, batchSize, myMDP.getGamma(), myExp.getPolicy())
+    for i in range(batchSize):
+        theta_hat=myMCPE.LSTD_lambda(myExp.getPhi(), lambda_coef, myMDP, data[i])
+        print(theta_hat)
+    
 def main():
     #######################MDP Parameters and Experiment setup###############################
     myExp_Params=expParameters()
     myMDP_Params=mdpParameteres()
     #if the absorbing state is anything except 19 the trajectory will not terminate
     absorbingStates=[]
-    absorbingStates.append(19)    
-    goalStates=[] 
-    i=0
-    while i < myMDP_Params.numGoalstates:
-        sRand=numpy.random.randint(0,myMDP_Params.numState)
-        if sRand not in goalStates:
-            goalStates.append(sRand)
-            i=i+1  
-        else:
-            continue     
+    absorbingStates.append(myMDP_Params.numState-1)    
+    goalStates=[myMDP_Params.numState-1] 
+    #i=0
+    #while i < myMDP_Params.numGoalstates:
+    #    sRand=numpy.random.randint(0,myMDP_Params.numState)
+    #    if sRand not in goalStates:
+    #        goalStates.append(sRand)
+    #       i=i+1  
+    #    else:
+    #       continue     
     stateSpace=numpy.ones(myMDP_Params.numState)
     #To DO:Fix this part, since states should be in {0,1} 
     for i in range(myMDP_Params.numState):
@@ -291,6 +373,7 @@ def main():
     policy="uniform"
     
     #####################Generating the feature matrix#############################
+
     myExps=[] 
     for k in range(len(myExp_Params.experimentBatchLenghts)): 
         myExps.append(experiment(myExp_Params.aggregationFactor,stateSpace,myExp_Params.epsilon, myExp_Params.delta, lambdaClass, myExp_Params.numRounds, myExp_Params.experimentBatchLenghts[k],policy))
@@ -300,7 +383,8 @@ def main():
     dim=len(featureMatrix)
     #Starting the MC-Chain construction
     myMDP = MChain(stateSpace, myExps[0].TransitionFunction, myExps[0].rewardfunc, goalStates, absorbingStates, myMDP_Params.gamma, myMDP_Params.maxReward)
-  
+    myMCPE=MCPE(myMDP,myExps[len(myExp_Params.experimentBatchLenghts)-1].getPhi(),myExps[len(myExp_Params.experimentBatchLenghts)-1].getPolicy(),"N")
+    #myMCPE.batchGen(myMDP, myExp_Params.maxTrajLength, 10, myMDP_Params.gamma)
     #Weight vector is used for averaging
     weightVector=[]
     for i in range(myMDP_Params.numState):
@@ -311,6 +395,8 @@ def main():
     weightVector=numpy.reshape(weightVector,(myMDP_Params.numState,1))
     #run_lambdaExperiment_LSL(myExps, myMDP_Params, myExp_Params, myMDP)
     #run_newGS_LSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
-    run_newGS_LSL_vs_SmoothLSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
+    #run_newGS_LSL_vs_SmoothLSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
+    run_lambdaExperiment_GS_LSL(myMCPE, myExps,myMDP_Params, myExp_Params, myMDP)
+    #run_lstdExperiment(myMDP_Params, myExp_Params, myMDP, 0.5)
     
 if __name__ == "__main__": main()
