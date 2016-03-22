@@ -309,15 +309,88 @@ class MCPE():
     
     def batchCutoff(self, filename, numTrajectories):
         miniBatch = [[ ] for y in range(numTrajectories)]
+        randIndecies=numpy.random.choice(5000, (1,numTrajectories), replace=False)
         batch_file = open(filename, "r")
         for i in range(numTrajectories):
-            newLine=batch_file.readline()
+            #newLine=batch_file.readline(randIndecies[i])
+            newLine=self.picklines(batch_file, randIndecies[i])
             if newLine=="\n":
-                newLine=batch_file.readline()
+                lIndex=numpy.random.choice(5000, replace=False)
+                newLine=self.picklines(batch_file, lIndex) 
+                #newLine=batch_file.readline(randIndecies[i])
         #miniBatch= batch_file.readlines()
             #newlist= newLine.split (';')
             miniBatch[i]=newLine.split(',')
         return miniBatch 
+    
+    def picklines(self,thefile, whatlines):
+        return [x for i, x in enumerate(thefile) if i in whatlines]
+    
+    def subSampleGen(self,batch, numberOfsubSamples):
+        n=len(batch)
+        subSampelSize=int(n/numberOfsubSamples)
+        residue= n - subSampelSize*numberOfsubSamples
+        subSamples=[]
+        for i in range(numberOfsubSamples):
+            subSamples.append(numpy.random.choice(batch, size=subSampelSize, replace=False))
+        if residue is not 0:
+            res=[]
+            i=n-residue
+            while i<n:
+                res.append(batch[i])
+                i+=1
+            subSamples.append(res)
+        return subSamples
+    def rDist(self,c, z,t_int):
+        distS=[]
+        for i in range(len(z)):
+            distS.append([numpy.abs(c-z[i]),i])
+        if t_int>len(z):
+            return None
+        else: 
+            a=numpy.sort(distS,0)
+            return a[t_int-1]
+            
+    
+    def aggregate(self,z,t_int):
+        rDistance=numpy.zeros(len(z))
+        for i in range(len(z)):
+            rDistance[i]=self.rDist(z[i],z,t_int)
+        z_min_index=numpy.argmin(rDistance)
+        z_min=numpy.min(rDistance)
+        return [rDistance,z_min,z_min_index]
+    def computeRho(self,Dists,a):
+        temp=0
+        for i in range(a):
+            temp+=self.Dists[i]
+        return temp/a
+    
+    def computeAggregateSmoothBound(self,Dists, z,beta, s):
+        partitionPoint=int((len(z)+s)/2)+1
+        a= int(s/beta)
+        rho=self.computeRho(Dists,a)
+        temp_1=0
+        for k in range(len(z)):
+            temp_2=rho*(partitionPoint+(k+1)*s)*math.exp(-beta*k)
+            temp_1=2*max(temp_1, temp_2)
+        return temp_1
+    
+    def subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta):
+        dim=len(featuresMatrix)
+        alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
+        beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
+        subSamples=self.subSampleGen(batch, numberOfsubSamples)
+        z=numpy.zeros(len(subSamples))
+        for i in range(len(subSamples)):
+            FirstVisitVector=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])[2]
+            z[i]=self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories)
+        partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
+        g= self.aggregate(z,partitionPoint)
+        S_z=self.computeAggregateSmoothBound(g[0],z, beta, s)
+        cov_X=numpy.identity(dim)
+        ethaX=numpy.random.multivariate_normal(0,cov_X)
+        return g[1]+(S_z/alpha)*ethaX    
+                 
     
     def getminLambda(self, myMDP,featurmatrix):
         normPhi=numpy.linalg.norm(featurmatrix)
