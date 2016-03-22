@@ -59,7 +59,7 @@ class experiment():
             res.append([myMCPE.weighted_dif_L2_norm(mdp,V,FVMC[2]),errls])
         return res
     
-    def lambdaExperiment_GS_LSL(self, myMCPE, mdp,batchSize,maxTrajectoryLenghth, regCoefs,pow_exp):
+    def lambdaExperiment_GS_LSL(self, myMCPE, mdp,batchSize,maxTrajectoryLenghth, regCoefs,pow_exps):
         myMCPE=myMCPE
         V = myMCPE.realV(mdp)
         dim = len(self.__Phi)
@@ -73,7 +73,7 @@ class experiment():
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
             errls = []
-            ridgeParams = myMCPE.computeLambdas(mdp, self.__Phi, regCoefs, self.__batchSize, pow_exp)
+            ridgeParams = myMCPE.computeLambdas(mdp, self.__Phi, regCoefs, self.__batchSize, pow_exps)
             for i in range(len(ridgeParams)):
                 tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParams[i], len(S))
                 VL = self.__Phi*tL
@@ -150,6 +150,23 @@ class experiment():
             featureMatrix=numpy.reshape(aggFeatureMatrix,(aggregatedDim,len(stateSpace))) 
         return featureMatrix.T
     
+    def subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta):   
+        myMCPE=MCPE(mdp,self.__Phi,self.__policy)
+        V = myMCPE.realV(mdp)
+        rho = mdp.startStateDistribution()
+        ridgeParam=myMCPE.computeLambdas(mdp, self.__Phi, regCoef, batchSize, pow_exp)
+        results=[]
+        for k in range(self.__numrounds):
+            if (self.__batch_gen_param_trigger=="Y"):
+                S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            else:
+                S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
+            FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
+            results.append(myMCPE.subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam, batchSize, FVMC[2],epsilon,delta))
+            
+        return results
+            
+    
     def rewardfunc (self, destState, goalstates, maxReward):
         if destState in goalstates:
             return maxReward
@@ -175,11 +192,16 @@ def run_lambdaExperiment_LSL(experimentList,myMDP_Params,myExp_Params,myMDP):
 
 def run_lambdaExperiment_GS_LSL(myMCPE, experimentList,myMDP_Params, myExp_Params, myMDP):
     i=0
-    expResults=[]
-    for i in range(len(myExp_Params.experimentBatchLenghts)):
-        expResults.append(experimentList[i].lambdaExperiment_GS_LSL(myMCPE, myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength, myExp_Params.regCoefs, myExp_Params.pow_exp))
+    
+    meta_exponenet_test_Reuslts=[]
+    for m in range(len(myExp_Params.pow_exp)):
+        expResults=[]
+        for i in range(len(myExp_Params.experimentBatchLenghts)):
+            expResults.append(experimentList[i].lambdaExperiment_GS_LSL(myMCPE, myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength, myExp_Params.regCoefs, myExp_Params.pow_exp[m]))
+        meta_exponenet_test_Reuslts.append(expResults)
     ax = plt.gca()
-    ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    #ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    color_cycle=['b', 'r', 'g', 'c', 'k', 'y', 'm']
     ax.set_xscale('log')
     ax.set_yscale('log')
     realV_vs_FVMC=numpy.zeros(len(myExp_Params.regCoefs))
@@ -188,16 +210,24 @@ def run_lambdaExperiment_GS_LSL(myMCPE, experimentList,myMDP_Params, myExp_Param
     regCoefVals=numpy.zeros(len(myExp_Params.regCoefs))
     i=0
     #for i in range(len(myExp_Params.experimentBatchLenghts)):
-    for k in range(len(myExp_Params.experimentBatchLenghts)):
-        for i in range(len(myExp_Params.regCoefs)):
-            for j in range(myExp_Params.numRounds):
-                diff_V_dpVL_smoothed[i]+=(expResults[k][j][1][i][2]/myExp_Params.numRounds)
-                diff_V_dpVL_GS[i]+=(expResults[k][j][1][i][3]/myExp_Params.numRounds)
-                regCoefVals[i]=expResults[k][0][1][i][0]
-        ax.plot(regCoefVals,diff_V_dpVL_smoothed)
-        ax.plot(regCoefVals,diff_V_dpVL_GS,'r--')
-        ax.legend(["diff_V_dpVL_smoothed, "+" m: "+str(myExp_Params.experimentBatchLenghts[k])," diff_V_dpVL_GS"],loc=1)
-    plt.show()
+    m=0
+    for m in range(len(myExp_Params.pow_exp)):
+        diff_V_dpVL_smoothed=numpy.zeros(len(myExp_Params.regCoefs))
+        diff_V_dpVL_GS=numpy.zeros(len(myExp_Params.regCoefs))
+        regCoefVals=numpy.zeros(len(myExp_Params.regCoefs))
+        for k in range(len(myExp_Params.experimentBatchLenghts)):
+            for i in range(len(myExp_Params.regCoefs)):
+                for j in range(myExp_Params.numRounds):
+                    diff_V_dpVL_smoothed[i]+=(meta_exponenet_test_Reuslts[m][k][j][1][i][2]/myExp_Params.numRounds)
+                    diff_V_dpVL_GS[i]+=(meta_exponenet_test_Reuslts[m][k][j][1][i][3]/myExp_Params.numRounds)
+                    regCoefVals[i]=meta_exponenet_test_Reuslts[m][k][0][1][i][0]
+            ax.plot(regCoefVals,diff_V_dpVL_smoothed,color=color_cycle[k])
+            ax.plot(regCoefVals,diff_V_dpVL_GS,'r--',color=color_cycle[k])
+            ax.legend(["diff_V_dpVL_smoothed, "+" m: "+str(myExp_Params.experimentBatchLenghts[k])," diff_V_dpVL_GS"],loc=1)
+            min_dif=numpy.linalg.norm(diff_V_dpVL_smoothed-diff_V_dpVL_GS, -numpy.Inf)
+            print(str(min_dif)+"batch size= "+str(myExp_Params.experimentBatchLenghts[k])+" c= "+str(myExp_Params.regCoefs[i])+" exponent= "+str(myExp_Params.pow_exp[m]))
+        plt.xlabel("exponent= "+ str(myExp_Params.pow_exp[m]))
+        plt.show()
 
 def run_newGS_LSL_experiments(experimentList,myMDP_Params,myExp_Params,myMDP):   
     i=0
@@ -344,6 +374,30 @@ def run_lstdExperiment(myMDP_Params, myExp_Params,myMDP,lambda_coef):
     for i in range(batchSize):
         theta_hat=myMCPE.LSTD_lambda(myExp.getPhi(), lambda_coef, myMDP, data[i])
         print(theta_hat)
+        
+def run_SubSampAggExperiment(self, experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,regCoef):
+    expResults=[]
+    numberOfsubSamples=20
+    for i in range(len(myExp_Params.experimentBatchLenghts)):
+        s=int(numpy.sqrt(numberOfsubSamples))
+        expResults.append(experimentList[i].subSampleAggregateExperiment(myMDP,regCoef,myExp_Params.experimentBatchLenghts[i],myExp_Params.pow_exp[4],myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta))
+    ax = plt.gca()
+    ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    ax.set_xscale('log')
+    meanSA=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    stdSA=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    SA_bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    SA_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    SA_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    for j in range(len(myExp_Params.experimentBatchLenghts)):
+        meanSA[j] = numpy.average(expResults[j])#lsl_blm
+        stdSA[j] = numpy.std(expResults[j])#bld
+        SA_bldu[j] = math.log10(meanSA[j]+stdSA[j])-math.log10(meanSA[j])
+        SA_bldl[j] = -math.log10(meanSA[j]-stdSA[j])+math.log10(meanSA[j])
+        SA_blm[j] = math.log10(meanSA[j])
+    
+    ax.errorbar(myExp_Params.experimentBatchLenghts, SA_blm,  SA_bldu, SA_bldl)
+    
     
 def main():
     #######################MDP Parameters and Experiment setup###############################
@@ -396,7 +450,8 @@ def main():
     #run_lambdaExperiment_LSL(myExps, myMDP_Params, myExp_Params, myMDP)
     #run_newGS_LSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
     #run_newGS_LSL_vs_SmoothLSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
-    run_lambdaExperiment_GS_LSL(myMCPE, myExps,myMDP_Params, myExp_Params, myMDP)
+    #run_lambdaExperiment_GS_LSL(myMCPE, myExps,myMDP_Params, myExp_Params, myMDP)
+    run_SubSampAggExperiment(myMCPE,myMDP_Params, myExp_Params, myMDP)
     #run_lstdExperiment(myMDP_Params, myExp_Params, myMDP, 0.5)
     
 if __name__ == "__main__": main()
