@@ -197,7 +197,7 @@ class MCPE():
             
         upperBound=max(Vals)  
         return upperBound  
-               
+        
     def DPLSW(self, thetaTild, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, initStateDist="uniform", pi="uniform"):
         alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
         alpha=alpha/epsilon 
@@ -220,8 +220,11 @@ class MCPE():
         return [thetaTild_priv,thetaTild,math.pow(sigmmaX,2)]
     
     def weighted_dif_L2_norm(self, mdp, v ,vhat):
+        #v=v.flatten()
+        #vhat=vhat.flatten()
         Gamma = mdp.getGammaMatrix()
-        temp=numpy.mat((v-vhat).T)*numpy.mat(Gamma)*numpy.mat((v-vhat))
+        temp1=numpy.mat((v-vhat).T)*numpy.mat(Gamma)
+        temp=numpy.mat(temp1)*numpy.mat((v-vhat))
         temp=math.sqrt(temp)
         return temp
 
@@ -311,9 +314,10 @@ class MCPE():
         miniBatch = [[ ] for y in range(numTrajectories)]
         randIndecies=numpy.random.choice(5000, (1,numTrajectories), replace=False)
         batch_file = open(filename, "r")
+        newbatch=self.picklines(batch_file, randIndecies[0])
         for i in range(numTrajectories):
             #newLine=batch_file.readline(randIndecies[i])
-            newLine=self.picklines(batch_file, randIndecies[i])
+            newLine=newbatch[i]
             if newLine=="\n":
                 lIndex=numpy.random.choice(5000, replace=False)
                 newLine=self.picklines(batch_file, lIndex) 
@@ -334,62 +338,74 @@ class MCPE():
         for i in range(numberOfsubSamples):
             subSamples.append(numpy.random.choice(batch, size=subSampelSize, replace=False))
         if residue is not 0:
-            res=[]
-            i=n-residue
-            while i<n:
-                res.append(batch[i])
-                i+=1
-            subSamples.append(res)
+            subSamples.append(numpy.random.choice(batch, size=residue, replace=False))
         return subSamples
-    def rDist(self,c, z,t_int):
+    def rDist(self,mdp,c, z,t_int):
         distS=[]
         for i in range(len(z)):
-            distS.append([numpy.abs(c-z[i]),i])
+            distS.append([self.weighted_dif_L2_norm(mdp,numpy.reshape(c,(len(c),1)),numpy.reshape(z[i],(len(c),1))),i])
         if t_int>len(z):
             return None
-        else: 
-            a=numpy.sort(distS,0)
-            return a[t_int-1]
+        else:
+            a=sorted(distS, key=self.getKey)
+            return [c,a[t_int-1]]
+         
+    def getKey(self, item):
+        return item[0]
+    
+        
             
     
-    def aggregate(self,z,t_int):
-        rDistance=numpy.zeros(len(z))
+    def aggregate(self,mdp,z,t_int):
+        rDistance=[]
         for i in range(len(z)):
-            rDistance[i]=self.rDist(z[i],z,t_int)
-        z_min_index=numpy.argmin(rDistance)
-        z_min=numpy.min(rDistance)
-        return [rDistance,z_min,z_min_index]
+            rDistance.append(self.rDist(mdp,z[i],z,t_int))
+        mintemp=rDistance[0][1][0]
+        minIndex=rDistance[0][1][1]
+        z_min=rDistance[0][0]
+        for j in range(len(rDistance)):
+            if mintemp>rDistance[j][1][0]:
+                mintemp=rDistance[j][1][0]
+                minIndex=rDistance[j][1][1]
+                z_min=rDistance[j][0]
+        return [rDistance,z_min,mintemp,minIndex]
     def computeRho(self,Dists,a):
         temp=0
         for i in range(a):
-            temp+=self.Dists[i]
-        return temp/a
+            temp+=Dists[i][1][0]
+        if a==0:
+            return Dists[0][1][0]
+        else: 
+            return temp/a
     
     def computeAggregateSmoothBound(self,Dists, z,beta, s):
         partitionPoint=int((len(z)+s)/2)+1
-        a= int(s/beta)
+        a= int(s/beta)+1
         rho=self.computeRho(Dists,a)
         temp_1=0
         for k in range(len(z)):
             temp_2=rho*(partitionPoint+(k+1)*s)*math.exp(-beta*k)
-            temp_1=2*max(temp_1, temp_2)
-        return temp_1
+            temp_1=max(temp_1, temp_2)
+        return 2*temp_1
     
     def subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta):
         dim=len(featuresMatrix)
         alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
+        alpha=alpha/epsilon
         beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
         subSamples=self.subSampleGen(batch, numberOfsubSamples)
-        z=numpy.zeros(len(subSamples))
+        z=numpy.zeros((len(subSamples),len(featuresMatrix)))
         for i in range(len(subSamples)):
-            FirstVisitVector=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])[2]
-            z[i]=self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories)
+            FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
+            #z[i]=self.LSL(FVMC[2], myMDP, featuresMatrix, regCoef, numTrajectories)
+            z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
-        g= self.aggregate(z,partitionPoint)
+        g= self.aggregate(myMDP,z,partitionPoint)
         S_z=self.computeAggregateSmoothBound(g[0],z, beta, s)
         cov_X=numpy.identity(dim)
-        ethaX=numpy.random.multivariate_normal(0,cov_X)
-        return g[1]+(S_z/alpha)*ethaX    
+        ethaX=numpy.random.multivariate_normal(numpy.zeros(dim),cov_X)
+        noise=(S_z/alpha)*ethaX
+        return [g[1]+noise,g[1]]    
                  
     
     def getminLambda(self, myMDP,featurmatrix):
