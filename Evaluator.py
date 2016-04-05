@@ -340,72 +340,96 @@ class MCPE():
         if residue is not 0:
             subSamples.append(numpy.random.choice(batch, size=residue, replace=False))
         return subSamples
-    def rDist(self,mdp,c, z,t_int):
+    def rDist(self,mdp,c, z,t_int, distance_upper_bound):#returns the t_init th distace of c to z and its value 
         distS=[]
         for i in range(len(z)):
             distS.append([self.weighted_dif_L2_norm(mdp,numpy.reshape(c,(len(c),1)),numpy.reshape(z[i],(len(c),1))),i])
-        if t_int>len(z):
-            return None
-        else:
-            a=sorted(distS, key=self.getKey)
-            return [c,a[t_int-1]]
+        tempSize=len(z)
+#        if t_int > tempSize:
+#            return distance_upper_bound
+#        else:
+        a=sorted(distS, key=self.getKey)
+        return [c,a[t_int-1][0]]
          
     def getKey(self, item):
         return item[0]
+    def getKey2(self, item):
+        return item[1][0]
     
+    def aggregate2(self,mdp,z,distUB):
         
-            
+        t_distS=[]
+        t=int(len(z)/2)+1
+        for i in range(len(z)):
+            temp=self.rDist(mdp, z[i], z, t,distance_upper_bound=distUB)
+            t_distS.append(temp)
+        a=sorted(t_distS, key=self.getKey2)
+        return [t_distS,a[0][0],a[1][0]]
     
-    def aggregate(self,mdp,z,t_int):
+    def aggregate(self,mdp,z,t_int,distUB):
         rDistance=[]
         for i in range(len(z)):
-            rDistance.append(self.rDist(mdp,z[i],z,t_int))
-        mintemp=rDistance[0][1][0]
-        minIndex=rDistance[0][1][1]
+            rDistance.append(self.rDist(mdp,z[i],z,t_int,distUB))
+        mintemp=rDistance[0][1]
+        #minIndex=rDistance[0][1][1]
         z_min=rDistance[0][0]
         for j in range(len(rDistance)):
-            if mintemp>rDistance[j][1][0]:
-                mintemp=rDistance[j][1][0]
-                minIndex=rDistance[j][1][1]
+            if mintemp>rDistance[j][1]:
+                mintemp=rDistance[j][1]
+                #minIndex=rDistance[j][1][1]
                 z_min=rDistance[j][0]
-        return [rDistance,z_min,mintemp,minIndex]
-    def computeRho(self,Dists,a):
+        return [rDistance,z_min,mintemp]
+    def computeRho(self,z,t,a,mdp,distance_upper_bound):
+        rDistance=[]
         temp=0
+        for i in range(len(z)):
+            rDistance.append(self.rDist(mdp,z[i],z,t,distance_upper_bound))
         for i in range(a):
-            temp+=Dists[i][1][0]
+            temp+=rDistance[i][1]
         if a==0:
-            return Dists[0][1][0]
+            return rDistance[0][1]
         else: 
             return temp/a
     
-    def computeAggregateSmoothBound(self,Dists, z,beta, s):
+    def computeAggregateSmoothBound(self, z,beta, s,mdp,distance_upper_bound):
         partitionPoint=int((len(z)+s)/2)+1
         a= int(s/beta)+1
-        rho=self.computeRho(Dists,a)
+        #rho=self.computeRho(partitionPoint, Dists,a)
         temp_1=0
-        for k in range(len(z)):
-            temp_2=rho*(partitionPoint+(k+1)*s)*math.exp(-beta*k)
+        k=0
+        t_0=partitionPoint+(k+1)*s
+        while t_0 <=len(z):
+            rho=self.computeRho(z, t_0 , a, mdp,distance_upper_bound)
+            temp_2=rho*math.exp(-beta*k)
             temp_1=max(temp_1, temp_2)
+            k+=1
+            t_0=partitionPoint+(k+1)*s
         return 2*temp_1
     
-    def subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta):
+    def subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
         dim=len(featuresMatrix)
         alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
         alpha=alpha/epsilon
         beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
+        
         subSamples=self.subSampleGen(batch, numberOfsubSamples)
         z=numpy.zeros((len(subSamples),len(featuresMatrix)))
         for i in range(len(subSamples)):
             FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
             #z[i]=self.LSL(FVMC[2], myMDP, featuresMatrix, regCoef, numTrajectories)
             z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
+            
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
-        g= self.aggregate(myMDP,z,partitionPoint)
-        S_z=self.computeAggregateSmoothBound(g[0],z, beta, s)
-        cov_X=numpy.identity(dim)
+        g= self.aggregate(myMDP,z,partitionPoint,distUB)
+        #g= self.aggregate2(myMDP,z)
+        
+        #To check the following block
+        S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
+        cov_X=(S_z/alpha)*numpy.identity(dim)
         ethaX=numpy.random.multivariate_normal(numpy.zeros(dim),cov_X)
-        noise=(S_z/alpha)*ethaX
-        return [g[1]+noise,g[1]]    
+        print(S_z)
+        #noise=(S_z/alpha)*ethaX
+        return [g[1]+ethaX,g[1]]
                  
     
     def getminLambda(self, myMDP,featurmatrix):

@@ -150,7 +150,7 @@ class experiment():
             featureMatrix=numpy.reshape(aggFeatureMatrix,(aggregatedDim,len(stateSpace))) 
         return featureMatrix.T
     
-    def subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi):   
+    def subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi,distUB):   
         myMCPE=MCPE(mdp,self.__Phi,self.__policy)
         V = myMCPE.realV(mdp)
         rho = mdp.startStateDistribution()
@@ -164,7 +164,7 @@ class experiment():
             else:
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
-            tempMCPE=myMCPE.subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], batchSize, FVMC[2],epsilon,delta)
+            tempMCPE=myMCPE.subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], batchSize, FVMC[2],epsilon,delta,distUB)
             resultsDPSA.append(tempMCPE[0])
             resultsSA.append(tempMCPE[1])
             temFVMC.append(numpy.mat(FVMC[0].T)*numpy.mat(Phi))
@@ -380,6 +380,7 @@ def run_lstdExperiment(myMDP_Params, myExp_Params,myMDP,lambda_coef):
         print(theta_hat)
         
 def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP):
+    
     expResultsDPSA=[]
     expResultsSA=[]
     expResultsLSW=[]
@@ -391,7 +392,7 @@ def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, 
     for i in range(len(myExp_Params.experimentBatchLenghts)):
         numberOfsubSamples=int(math.sqrt(myExp_Params.experimentBatchLenghts[i]))
         s=int(numpy.sqrt(numberOfsubSamples))
-        tempSAE=experimentList[i].subSampleAggregateExperiment(myMDP,myExp_Params.regCoefs,myExp_Params.experimentBatchLenghts[i],myExp_Params.pow_exp,myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi())
+        tempSAE=experimentList[i].subSampleAggregateExperiment(myMDP,myExp_Params.regCoefs,myExp_Params.experimentBatchLenghts[i],myExp_Params.pow_exp,myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),myExp_Params.distUB)
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
         expResultsLSW.append(tempSAE[2])
@@ -425,11 +426,11 @@ def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, 
             tempLSW+=numpy.reshape(expResultsLSW[j][k],(len(experimentList[i].getPhi()),1))/myExp_Params.numRounds
         tempV=numpy.reshape(expResultsV[j],(len(experimentList[i].getPhi()),1))/myExp_Params.numRounds
             
-        mean_V_vs_LSW[j]=numpy.average(tempLSW-tempV)
-        std_V_vs_LSW[j] = numpy.std(tempLSW-tempV)#bld
-        V_vs_LSW_bldu[j] = math.log10(abs(mean_V_vs_LSW[j]+std_V_vs_LSW[j]))-math.log10(abs(mean_V_vs_LSW[j]))
-        V_vs_LSW_bldl[j] = -math.log10(abs(mean_V_vs_LSW[j]-std_V_vs_LSW[j]))+math.log10(abs(mean_V_vs_LSW[j]))
-        V_vs_LSW_blm[j] = math.log10(abs(mean_V_vs_LSW[j]))   
+        #mean_V_vs_LSW[j]=numpy.average(tempLSW-tempV)
+        #std_V_vs_LSW[j] = numpy.std(tempLSW-tempV)#bld
+        #V_vs_LSW_bldu[j] = math.log10(abs(mean_V_vs_LSW[j]+std_V_vs_LSW[j]))-math.log10(abs(mean_V_vs_LSW[j]))
+        #V_vs_LSW_bldl[j] = -math.log10(abs(mean_V_vs_LSW[j]-std_V_vs_LSW[j]))+math.log10(abs(mean_V_vs_LSW[j]))
+        #V_vs_LSW_blm[j] = math.log10(abs(mean_V_vs_LSW[j]))   
         
         mean_V_vs_DPSA[j]=numpy.average(tempDPSA-tempLSW)
         std_V_vs_DPSA[j] = numpy.std(tempDPSA-tempLSW)#bld
@@ -444,14 +445,16 @@ def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, 
         V_vs_SA_blm[j] = math.log10(abs(mean_V_vs_SA[j]))
         
     
-    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  V_vs_DPSA_bldu, V_vs_DPSA_bldl)
+    
     ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  V_vs_SA_bldu, V_vs_SA_bldl)
     #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  V_vs_LSW_bldu, V_vs_LSW_bldl)
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  V_vs_DPSA_bldu, V_vs_DPSA_bldl)
+
     
     plt.ylabel('log10(W-RMSE)')
     plt.xlabel('Batch Size')
-    #plt.legend(["True vs. GS-DPLSL","True vs. Smoothed-DPLSL" ],loc=7)
-    #plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", \lambda= 100 m^"+str(myExp_Params.pow_exp))
+    plt.legend(["LSW vs. SA", "LSW vs. DP-SA"],loc=2)
+    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)")
     #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
     plt.show()
@@ -482,7 +485,7 @@ def main():
     ##############################MCPE Parameters##################################
     lambdaClass='L'
     policy="uniform"
-    
+    distUB=myExp_Params.distUB
     #####################Generating the feature matrix#############################
 
     myExps=[] 
