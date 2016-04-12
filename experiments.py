@@ -78,7 +78,7 @@ class experiment():
                 tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParams[i], len(S))
                 VL = self.__Phi*tL
                 dpLSL_smoothed=myMCPE.DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParams[i], len(S), rho, self.__policy)
-                dpLSL_GS= myMCPE.newDPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParams[i], len(S), rho, self.__policy)
+                dpLSL_GS= myMCPE.GS_based_DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParams[i], len(S), rho, self.__policy)
                 temp5=reshape(dpLSL_smoothed[0], (len(dpLSL_smoothed[0]),1))
                 temp6=reshape(dpLSL_GS[0], (len(dpLSL_GS[0]),1))
                 dpVL_smoothed = self.__Phi*temp5
@@ -105,7 +105,7 @@ class experiment():
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
             tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParam[0], batchSize)
             VL = self.__Phi*tL
-            dpLSL=myMCPE.newDPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParam[0], batchSize, rho, self.__policy)
+            dpLSL=myMCPE.GS_based_DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParam[0], batchSize, rho, self.__policy)
             dpLSL_smoothed=myMCPE.DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParam[0], batchSize, rho, self.__policy)
             temp5=reshape(dpLSL[0], (len(dpLSL[0]),1))
             temp6=reshape(dpLSL_smoothed[0], (len(dpLSL_smoothed[0]),1))
@@ -150,7 +150,7 @@ class experiment():
             featureMatrix=numpy.reshape(aggFeatureMatrix,(aggregatedDim,len(stateSpace))) 
         return featureMatrix.T
     
-    def subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi,distUB):   
+    def LSW_subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi,distUB):   
         myMCPE=MCPE(mdp,self.__Phi,self.__policy)
         V = myMCPE.realV(mdp)
         rho = mdp.startStateDistribution()
@@ -164,11 +164,32 @@ class experiment():
             else:
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
-            tempMCPE=myMCPE.subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], batchSize, FVMC[2],epsilon,delta,distUB)
+            tempMCPE=myMCPE.LSW_subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], batchSize, FVMC[2],epsilon,delta,distUB)
             resultsDPSA.append(tempMCPE[0])
             resultsSA.append(tempMCPE[1])
             temFVMC.append(numpy.mat(FVMC[0].T)*numpy.mat(Phi))
         return [resultsDPSA,resultsSA,temFVMC,V]
+    
+    def LSL_subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi,distUB):   
+        myMCPE=MCPE(mdp,self.__Phi,self.__policy)
+        V = myMCPE.realV(mdp)
+        rho = mdp.startStateDistribution()
+        ridgeParam=myMCPE.computeLambdas(mdp, self.__Phi, [regCoef], batchSize, pow_exp[0])
+        resultsDPSA=[]
+        resultsSA=[]
+        temLSL=[]
+        for k in range(self.__numrounds):
+            if (self.__batch_gen_param_trigger=="Y"):
+                S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
+            else:
+                S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
+            FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
+            LSL_result=myMCPE.LSL(FVMC[2], mdp, self.__Phi, regCoef, batchSize)
+            tempMCPE=myMCPE.LSL_subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], pow_exp[0], batchSize, FVMC[2],epsilon,delta,distUB)
+            resultsDPSA.append(tempMCPE[0])
+            resultsSA.append(tempMCPE[1])
+            temLSL.append(numpy.mat(LSL_result.T)*numpy.mat(Phi))
+        return [resultsDPSA,resultsSA,temLSL,V]
             
     
     def rewardfunc (self, destState, goalstates, maxReward):
@@ -379,7 +400,7 @@ def run_lstdExperiment(myMDP_Params, myExp_Params,myMDP,lambda_coef):
         theta_hat=myMCPE.LSTD_lambda(myExp.getPhi(), lambda_coef, myMDP, data[i])
         print(theta_hat)
         
-def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP):
+def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP):
     
     expResultsDPSA=[]
     expResultsSA=[]
@@ -392,7 +413,7 @@ def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, 
     for i in range(len(myExp_Params.experimentBatchLenghts)):
         numberOfsubSamples=int(math.sqrt(myExp_Params.experimentBatchLenghts[i]))
         s=int(numpy.sqrt(numberOfsubSamples))
-        tempSAE=experimentList[i].subSampleAggregateExperiment(myMDP,myExp_Params.regCoefs,myExp_Params.experimentBatchLenghts[i],myExp_Params.pow_exp,myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),myExp_Params.distUB)
+        tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.regCoefs,myExp_Params.experimentBatchLenghts[i],myExp_Params.pow_exp,myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),myExp_Params.distUB)
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
         expResultsLSW.append(tempSAE[2])
@@ -416,45 +437,151 @@ def run_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, 
     V_vs_LSW_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     V_vs_LSW_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     for j in range(len(myExp_Params.experimentBatchLenghts)):
-        tempDPSA= numpy.zeros((len(experimentList[i].getPhi()),1))
-        tempSA= numpy.zeros((len(experimentList[i].getPhi()),1))
-        tempV=numpy.zeros((len(experimentList[i].getPhi()),1))
-        tempLSW=numpy.zeros((len(experimentList[i].getPhi()),1))
+        tempDPSA= [[] for x in range(len(myExp_Params.experimentBatchLenghts))]
+        tempSA= [[] for x in range(len(myExp_Params.experimentBatchLenghts))]
+        tempV=numpy.reshape(expResultsV[j],(len(experimentList[i].getPhi()),1))
+        tempLSW=[[] for x in range(len(myExp_Params.experimentBatchLenghts))]
         for k in range(myExp_Params.numRounds):
-            tempDPSA += numpy.reshape(expResultsDPSA[j][k],(len(experimentList[i].getPhi()),1))/myExp_Params.numRounds
-            tempSA += numpy.reshape(expResultsSA[j][k],(len(experimentList[i].getPhi()),1))/myExp_Params.numRounds
-            tempLSW+=numpy.reshape(expResultsLSW[j][k],(len(experimentList[i].getPhi()),1))/myExp_Params.numRounds
-        tempV=numpy.reshape(expResultsV[j],(len(experimentList[i].getPhi()),1))/myExp_Params.numRounds
+            tempDPSA[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,numpy.reshape(expResultsDPSA[j][k],(len(experimentList[i].getPhi()),1))))
+            tempSA[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,numpy.reshape(expResultsSA[j][k],(len(experimentList[i].getPhi()),1))))
+            vhat=numpy.reshape(expResultsLSW[j][k],(len(experimentList[i].getPhi()),1))
+            tempLSW[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,vhat))
+        #tempDPSA=tempDPSA/myExp_Params.numRounds
+        #tempSA=tempSA/myExp_Params.numRounds
+        #tempLSW=tempLSW/myExp_Params.numRounds
+        
+        
             
         #mean_V_vs_LSW[j]=numpy.average(tempLSW-tempV)
         #std_V_vs_LSW[j] = numpy.std(tempLSW-tempV)#bld
         #V_vs_LSW_bldu[j] = math.log10(abs(mean_V_vs_LSW[j]+std_V_vs_LSW[j]))-math.log10(abs(mean_V_vs_LSW[j]))
         #V_vs_LSW_bldl[j] = -math.log10(abs(mean_V_vs_LSW[j]-std_V_vs_LSW[j]))+math.log10(abs(mean_V_vs_LSW[j]))
         #V_vs_LSW_blm[j] = math.log10(abs(mean_V_vs_LSW[j]))   
+        temptemp=tempLSW[j]
+        mean_V_vs_LSW[j]=abs(numpy.average(temptemp))
+        print(mean_V_vs_LSW[j])
+        std_V_vs_LSW[j] = numpy.std(temptemp)
+        V_vs_LSW_bldu[j] = math.log10(abs(mean_V_vs_LSW[j]+std_V_vs_LSW[j]))-math.log10(abs(mean_V_vs_LSW[j]))
+        V_vs_LSW_bldl[j] = -math.log10(abs(mean_V_vs_LSW[j]-std_V_vs_LSW[j]))+math.log10(abs(mean_V_vs_LSW[j]))
+        V_vs_LSW_blm[j] = math.log10(abs(mean_V_vs_LSW[j]))
         
-        mean_V_vs_DPSA[j]=numpy.average(tempDPSA-tempLSW)
-        std_V_vs_DPSA[j] = numpy.std(tempDPSA-tempLSW)#bld
+        
+        mean_V_vs_DPSA[j]=numpy.average(tempDPSA[j])
+        std_V_vs_DPSA[j] = numpy.std(tempDPSA[j])#bld
         V_vs_DPSA_bldu[j] = math.log10(abs(mean_V_vs_DPSA[j]+std_V_vs_DPSA[j]))-math.log10(abs(mean_V_vs_DPSA[j]))
         V_vs_DPSA_bldl[j] = -math.log10(abs(mean_V_vs_DPSA[j]-std_V_vs_DPSA[j]))+math.log10(abs(mean_V_vs_DPSA[j]))
         V_vs_DPSA_blm[j] = math.log10(abs(mean_V_vs_DPSA[j]))
         
-        mean_V_vs_SA[j]=numpy.average(tempSA-tempLSW)
-        std_V_vs_SA[j] = numpy.std(tempSA-tempLSW)#bld
-        V_vs_SA_bldu[j] = math.log10(abs(mean_V_vs_SA[j]+std_V_vs_SA[j]))-math.log10(abs(mean_V_vs_SA[j]))
-        V_vs_SA_bldl[j] = -math.log10(abs(mean_V_vs_SA[j]-std_V_vs_SA[j]))+math.log10(abs(mean_V_vs_SA[j]))
-        V_vs_SA_blm[j] = math.log10(abs(mean_V_vs_SA[j]))
+        mean_V_vs_SA[j]=numpy.average(tempSA[j])
+        std_V_vs_SA[j] = numpy.std(tempSA[j])#bld
+        V_vs_SA_bldu[j] = math.log10((mean_V_vs_SA[j]+std_V_vs_SA[j]))-math.log10((mean_V_vs_SA[j]))
+        V_vs_SA_bldl[j] = -math.log10((mean_V_vs_SA[j]-std_V_vs_SA[j]))+math.log10((mean_V_vs_SA[j]))
+        V_vs_SA_blm[j] = math.log10((mean_V_vs_SA[j]))
         
     
-    
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  V_vs_LSW_bldu, V_vs_LSW_bldl)
     ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  V_vs_SA_bldu, V_vs_SA_bldl)
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  V_vs_LSW_bldu, V_vs_LSW_bldl)
     ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  V_vs_DPSA_bldu, V_vs_DPSA_bldl)
 
     
     plt.ylabel('log10(W-RMSE)')
     plt.xlabel('Batch Size')
-    plt.legend(["LSW vs. SA", "LSW vs. DP-SA"],loc=2)
-    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)")
+    plt.legend(["LSW-Real", "SA-Real", "DPSA-Real"],loc=2)
+    #plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)")
+    #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
+    #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
+    plt.show()
+    
+def run_LSL_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP):
+    
+    expResultsDPSA=[]
+    expResultsSA=[]
+    expResultsLSW=[]
+    expResultsV=[]
+    V_vs_LSW=[]
+    V_vs_SA=[]
+    V_vs_DPSA=[]
+    #numberOfsubSamples=1
+    for i in range(len(myExp_Params.experimentBatchLenghts)):
+        print("exp"+str(i))
+        numberOfsubSamples=int(math.sqrt(myExp_Params.experimentBatchLenghts[i]))
+        s=int(numpy.sqrt(numberOfsubSamples))
+        tempSAE=experimentList[i].LSL_subSampleAggregateExperiment(myMDP,myExp_Params.lambdaCoef,myExp_Params.experimentBatchLenghts[i],myExp_Params.pow_exp,myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),myExp_Params.distUB)
+        expResultsDPSA.append(tempSAE[0])
+        expResultsSA.append(tempSAE[1])
+        expResultsLSW.append(tempSAE[2])
+        expResultsV.append(tempSAE[3])
+        
+    ax = plt.gca()
+    ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    ax.set_xscale('log')
+    mean_V_vs_DPSA=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    std_V_vs_DPSA=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_DPSA_bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_DPSA_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_DPSA_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    mean_V_vs_SA=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    std_V_vs_SA=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_SA_bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_SA_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_SA_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    mean_V_vs_LSL=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    std_V_vs_LSL=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_LSL_bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_LSL_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    V_vs_LSL_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    for j in range(len(myExp_Params.experimentBatchLenghts)):
+        tempDPSA= [[] for x in range(len(myExp_Params.experimentBatchLenghts))]
+        tempSA= [[] for x in range(len(myExp_Params.experimentBatchLenghts))]
+        tempV=numpy.reshape(expResultsV[j],(len(experimentList[i].getPhi()),1))
+        tempLSL=[[] for x in range(len(myExp_Params.experimentBatchLenghts))]
+        for k in range(myExp_Params.numRounds):
+            tempDPSA[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,numpy.reshape(expResultsDPSA[j][k],(len(experimentList[i].getPhi()),1))))
+            tempSA[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,numpy.reshape(expResultsSA[j][k],(len(experimentList[i].getPhi()),1))))
+            vhat=numpy.reshape(expResultsLSW[j][k],(len(experimentList[i].getPhi()),1))
+            tempLSL[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,vhat))
+        #tempDPSA=tempDPSA/myExp_Params.numRounds
+        #tempSA=tempSA/myExp_Params.numRounds
+        #tempLSW=tempLSW/myExp_Params.numRounds
+        
+        
+            
+        #mean_V_vs_LSW[j]=numpy.average(tempLSW-tempV)
+        #std_V_vs_LSW[j] = numpy.std(tempLSW-tempV)#bld
+        #V_vs_LSW_bldu[j] = math.log10(abs(mean_V_vs_LSW[j]+std_V_vs_LSW[j]))-math.log10(abs(mean_V_vs_LSW[j]))
+        #V_vs_LSW_bldl[j] = -math.log10(abs(mean_V_vs_LSW[j]-std_V_vs_LSW[j]))+math.log10(abs(mean_V_vs_LSW[j]))
+        #V_vs_LSW_blm[j] = math.log10(abs(mean_V_vs_LSW[j]))   
+        temptemp=tempLSL[j]
+        mean_V_vs_LSL[j]=abs(numpy.average(temptemp))
+        #print(mean_V_vs_LSL[j])
+        std_V_vs_LSL[j] = numpy.std(temptemp)
+        V_vs_LSL_bldu[j] = math.log10(abs(mean_V_vs_LSL[j]+std_V_vs_LSL[j]))-math.log10(abs(mean_V_vs_LSL[j]))
+        V_vs_LSL_bldl[j] = (-math.log10(abs(mean_V_vs_LSL[j]-std_V_vs_LSL[j]))+math.log10(abs(mean_V_vs_LSL[j])))
+        V_vs_LSL_blm[j] = math.log10(abs(mean_V_vs_LSL[j]))
+        
+        
+        mean_V_vs_DPSA[j]=numpy.average(tempDPSA[j])
+        std_V_vs_DPSA[j] = numpy.std(tempDPSA[j])#bld
+        V_vs_DPSA_bldu[j] = math.log10(abs(mean_V_vs_DPSA[j]+std_V_vs_DPSA[j]))-math.log10(abs(mean_V_vs_DPSA[j]))
+        V_vs_DPSA_bldl[j] = (-math.log10(abs(mean_V_vs_DPSA[j]-std_V_vs_DPSA[j]))+math.log10(abs(mean_V_vs_DPSA[j])))
+        V_vs_DPSA_blm[j] =math.log10(abs(mean_V_vs_DPSA[j]))
+        
+        mean_V_vs_SA[j]=numpy.average(tempSA[j])
+        std_V_vs_SA[j] = numpy.std(tempSA[j])#bld
+        V_vs_SA_bldu[j] = math.log10((mean_V_vs_SA[j]+std_V_vs_SA[j]))-math.log10((mean_V_vs_SA[j]))
+        V_vs_SA_bldl[j] = (-math.log10((mean_V_vs_SA[j]-std_V_vs_SA[j]))+math.log10((mean_V_vs_SA[j])))
+        V_vs_SA_blm[j] = math.log10((mean_V_vs_SA[j]))
+        
+    
+    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSL_blm,  V_vs_LSL_bldu, V_vs_LSL_bldl)
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  V_vs_SA_bldu, V_vs_SA_bldl)
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  V_vs_DPSA_bldu, V_vs_DPSA_bldl)
+
+    
+    plt.ylabel('log10(W-RMSE)')
+    plt.xlabel('Batch Size')
+    plt.legend(["SA(LSL)-Real","DPSA(LSL)-Real"],loc=2)
+    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)"+"  lambda= "+str(myExp_Params.lambdaCoef)+"m^"+str(myExp_Params.pow_exp[0]))
     #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
     plt.show()
@@ -466,7 +593,7 @@ def main():
     #if the absorbing state is anything except 19 the trajectory will not terminate
     absorbingStates=[]
     absorbingStates.append(myMDP_Params.numState-1)    
-    goalStates=[myMDP_Params.numState-1] 
+    goalStates=[myMDP_Params.numState-2] 
     #i=0
     #while i < myMDP_Params.numGoalstates:
     #    sRand=numpy.random.randint(0,myMDP_Params.numState)
@@ -511,7 +638,8 @@ def main():
     #run_newGS_LSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
     #run_newGS_LSL_vs_SmoothLSL_experiments(myExps, myMDP_Params, myExp_Params, myMDP)
     #run_lambdaExperiment_GS_LSL(myMCPE, myExps,myMDP_Params, myExp_Params, myMDP)
-    run_SubSampAggExperiment(myExps, myMCPE, myMDP_Params, myExp_Params, myMDP)   
+    #run_LSW_SubSampAggExperiment(myExps, myMCPE, myMDP_Params, myExp_Params, myMDP)
+    run_LSL_SubSampAggExperiment(myExps, myMCPE, myMDP_Params, myExp_Params, myMDP)   
     #run_lstdExperiment(myMDP_Params, myExp_Params, myMDP, 0.5)
     
 if __name__ == "__main__": main()

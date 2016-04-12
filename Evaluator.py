@@ -38,20 +38,17 @@ class MCPE():
         if batch_gen_trigger=="Y":
             self.InitHugeBatch= self.batchGen(mdp, 200, 5000, self.gamma, self.pi, mdp.startStateDistribution())
             self.batch_gen_trigger="N"
-        #else:
-        #    Batch_file = open(self.huge_batch_name, "w+")
-        #   self.InitHugeBatch= Batch_file.readlines()
-             
-        
-    
+            
     def FirstVisit(self,trajectory, state, gamma):
         sIndexOfTau=0
         count=0
         reward=0
         temp=[]
         #finding the index of a state in the given trajectory 
+        temp_state=0
         for i in trajectory:
-            if state == i.split('-')[0]:
+            temp_state=i.split('-')[0]
+            if state == int(temp_state):
                 sIndexOfTau=count
                 break
             else:
@@ -111,9 +108,11 @@ class MCPE():
                 sourceState=nextState   
                 j=j+1  
             #line= numpy.asarray(line)
+            
             Batch_file.write("\n")
             #simplejson.dump("\n", Batch_file)
-            i=i+1  
+            i=i+1 
+        print(i) 
         Batch_file.close()
         return Batch
 
@@ -156,7 +155,7 @@ class MCPE():
     
         invMatrix=numpy.mat(phiT)*numpy.mat(myMDP.getGammaMatrix())
         invMatrix=numpy.mat(invMatrix)*numpy.mat(featuresMatrix)
-        invMatrix=invMatrix.I
+        invMatrix=linalg.inv(invMatrix)
         temp=numpy.mat(invMatrix)*numpy.mat(phiT)
         temp1=numpy.mat(temp)*numpy.mat(myMDP.getGammaMatrix())
         temp2=(numpy.reshape(FirstVisitVector, (len(FirstVisitVector),1)))
@@ -178,6 +177,7 @@ class MCPE():
             Vals.append(temp1)
         upperBound=max(Vals)  
         return upperBound
+   
     def SmoothBound_LSL(self,featurmatrix, myMDP, countXVec, rho, regCoef,beta,numTrajectories):
         normPhi=numpy.linalg.norm(featurmatrix)
         maxRho=numpy.linalg.norm(rho,Inf)
@@ -206,7 +206,7 @@ class MCPE():
         Gamma= myMDP.getGammaMatrix()
         GammaSqrt= linalg.sqrtm(Gamma)
         GammaSqrtPhi= numpy.mat(GammaSqrt) *numpy.mat(featuresMatrix)
-        GammaSqrtPhiInv=GammaSqrtPhi.I 
+        GammaSqrtPhiInv=linalg.inv(GammaSqrtPhi) 
         PsiBetaX= self.SmootBound_LSW(myMDP, Gamma, countXVec, beta, myMDP.startStateDistribution())
         sigmmaX= (alpha*myMDP.getMaxReward())/(1-gamma)
         sigmmaX=sigmmaX*numpy.linalg.norm(GammaSqrtPhiInv)
@@ -238,12 +238,13 @@ class MCPE():
         temp=(0.5*temp)
         Ident=temp*numpy.identity(dim)
         invMatrix= (invMatrix)+(Ident)
-        invMatrix=invMatrix.I
+        invMatrix=linalg.inv(invMatrix)
         temp=numpy.mat(invMatrix)*numpy.mat(phiT)
         temp1=numpy.mat(temp)*numpy.mat(Gamma_X)
         temp2=[]
         for i in range(len(FirstVisitVector)):
-            temp2.append(FirstVisitVector[i][0])
+            #temp2.append(FirstVisitVector[i][0])
+            temp2.append(FirstVisitVector[i])
         temp2=(numpy.reshape(temp2, (len(temp2),1)))
         thetaTil_X=numpy.mat(temp1)*numpy.mat(temp2)
         return thetaTil_X
@@ -269,7 +270,7 @@ class MCPE():
         thetaTil_X_priv=thetaTil_X+ethaX
         return [thetaTil_X_priv, thetaTil_X,math.pow(sigma_X,2)]
     
-    def newDPLSL (self, FirstVisitVector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
+    def GS_based_DPLSL (self, FirstVisitVector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
         dim=len(featuresMatrix)
         Rho=numpy.reshape(rho,(len(rho),1))
         thetaTil_X= self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories)
@@ -293,12 +294,14 @@ class MCPE():
     
     def realV(self,myMDP):
         R=myMDP.getExpextedRewardVec()
-        P=myMDP.getTransitionMatix()            
-        temp4=myMDP.getGamma()*P 
+        P=myMDP.getTransitionMatix()
+        gamma=myMDP.getGamma()          
+        temp4=gamma*P 
         temp5= numpy.identity(len(myMDP.getStateSpace()))
         temp4=temp5-temp4
         b = numpy.matrix(numpy.array(temp4))
-        bInv=b.I 
+        bInv=linalg.inv(b) 
+        test_temp=bInv*b
         V_Real=numpy.mat(bInv)*numpy.mat(R)
         return V_Real
     
@@ -321,10 +324,8 @@ class MCPE():
             if newLine=="\n":
                 lIndex=numpy.random.choice(5000, replace=False)
                 newLine=self.picklines(batch_file, lIndex) 
-                #newLine=batch_file.readline(randIndecies[i])
-        #miniBatch= batch_file.readlines()
-            #newlist= newLine.split (';')
             miniBatch[i]=newLine.split(',')
+        #Here I have to convert it to trajectories of ints and then return it
         return miniBatch 
     
     def picklines(self,thefile, whatlines):
@@ -333,18 +334,17 @@ class MCPE():
     def subSampleGen(self,batch, numberOfsubSamples):
         n=len(batch)
         subSampelSize=int(n/numberOfsubSamples)
-        residue= n - subSampelSize*numberOfsubSamples
+        #residue= n - subSampelSize*numberOfsubSamples
         subSamples=[]
         for i in range(numberOfsubSamples):
             subSamples.append(numpy.random.choice(batch, size=subSampelSize, replace=False))
-        if residue is not 0:
-            subSamples.append(numpy.random.choice(batch, size=residue, replace=False))
+        #if residue is not 0:
+        #    subSamples.append(numpy.random.choice(batch, size=residue, replace=False))
         return subSamples
     def rDist(self,mdp,c, z,t_int, distance_upper_bound):#returns the t_init th distace of c to z and its value 
         distS=[]
         for i in range(len(z)):
             distS.append([self.weighted_dif_L2_norm(mdp,numpy.reshape(c,(len(c),1)),numpy.reshape(z[i],(len(c),1))),i])
-        tempSize=len(z)
 #        if t_int > tempSize:
 #            return distance_upper_bound
 #        else:
@@ -392,21 +392,24 @@ class MCPE():
             return temp/a
     
     def computeAggregateSmoothBound(self, z,beta, s,mdp,distance_upper_bound):
-        partitionPoint=int((len(z)+s)/2)+1
+        partitionPoint=int((len(z)+s)/2)
         a= int(s/beta)+1
         #rho=self.computeRho(partitionPoint, Dists,a)
         temp_1=0
         k=0
         t_0=partitionPoint+(k+1)*s
+        tempList=[]
+        #print(str(t_0)+" "+str(len(z)))
         while t_0 <=len(z):
             rho=self.computeRho(z, t_0 , a, mdp,distance_upper_bound)
             temp_2=rho*math.exp(-beta*k)
+            tempList.append(temp_2)
             temp_1=max(temp_1, temp_2)
             k+=1
             t_0=partitionPoint+(k+1)*s
         return 2*temp_1
     
-    def subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
+    def LSW_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
         dim=len(featuresMatrix)
         alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
         alpha=alpha/epsilon
@@ -427,10 +430,37 @@ class MCPE():
         S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
         cov_X=(S_z/alpha)*numpy.identity(dim)
         ethaX=numpy.random.multivariate_normal(numpy.zeros(dim),cov_X)
-        print(S_z)
+        #print(S_z)
         #noise=(S_z/alpha)*ethaX
         return [g[1]+ethaX,g[1]]
                  
+    def LSL_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef, pow_exp,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
+        dim=len(featuresMatrix)
+        alpha=15.0*numpy.sqrt(2*numpy.math.log(4.0/delta))
+        alpha=alpha/epsilon
+        beta= ((2*epsilon)/5)*math.pow((numpy.math.sqrt(dim)+math.sqrt(2*numpy.math.log(2.0/delta))),2)
+        
+        subSamples=self.subSampleGen(batch, numberOfsubSamples)
+        z=numpy.zeros((len(subSamples),len(featuresMatrix)))
+        for i in range(len(subSamples)):
+            FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
+            regc=self.computeLambdas(myMDP, featuresMatrix,[regCoef], len(subSamples[i]), pow_exp)
+            z[i]=numpy.ravel(self.LSL(numpy.ravel(FVMC[2]), myMDP, featuresMatrix,regc[0],len(subSamples[i])))
+            #z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
+            
+        partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
+        g= self.aggregate(myMDP,z,partitionPoint,distUB)
+        #g= self.aggregate2(myMDP,z)
+        
+        #To check the following block
+        S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
+        print(S_z)
+        cov_X=(S_z/alpha)*numpy.identity(dim)
+        ethaX=numpy.random.multivariate_normal(numpy.zeros(dim),cov_X)
+        #print(S_z)
+        #noise=(S_z/alpha)*ethaX
+        return [g[1]+ethaX,g[1]]
+    
     
     def getminLambda(self, myMDP,featurmatrix):
         normPhi=numpy.linalg.norm(featurmatrix)
