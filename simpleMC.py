@@ -92,10 +92,10 @@ class MChain(object):
     def getReward(self,source,dest):
         if dest in self.__goalStates:
             if source in self.__goalStates:
-                return 0
+                return self.__maxReward
             else:
                 return self.__maxReward
-        else:
+        else :
             return 0
     
             

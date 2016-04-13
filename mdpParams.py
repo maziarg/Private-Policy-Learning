@@ -14,6 +14,6 @@ class mdpParameteres(object):
         self.initDist="uniform"
         self.numState= 40
         self.numAbsorbingStates=1
-        self.gamma=0.99
+        self.gamma=0.9
         self.maxReward=1
         self.numGoalstates=1
