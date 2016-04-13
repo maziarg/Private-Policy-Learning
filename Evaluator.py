@@ -341,22 +341,22 @@ class MCPE():
         #if residue is not 0:
         #    subSamples.append(numpy.random.choice(batch, size=residue, replace=False))
         return subSamples
-    def rDist(self,mdp,c, z,t_int, distance_upper_bound):#returns the t_init th distace of c to z and its value 
+    def rDist(self,mdp,c, z,t_init, distance_upper_bound):#returns the t_init th distace of c to z and its value 
         distS=[]
         for i in range(len(z)):
             distS.append([self.weighted_dif_L2_norm(mdp,numpy.reshape(c,(len(c),1)),numpy.reshape(z[i],(len(c),1))),i])
-#        if t_int > tempSize:
+#        if t_init > tempSize:
 #            return distance_upper_bound
 #        else:
         a=sorted(distS, key=self.getKey)
-        return [c,a[t_int-1][0]]
+        return [c,a[t_init-1][0]]
          
     def getKey(self, item):
         return item[0]
     def getKey2(self, item):
         return item[1][0]
     
-    def aggregate2(self,mdp,z,distUB):
+    def aggregate_median(self,mdp,z,distUB):
         
         t_distS=[]
         t=int(len(z)/2)+1
@@ -366,7 +366,7 @@ class MCPE():
         a=sorted(t_distS, key=self.getKey2)
         return [t_distS,a[0][0],a[1][0]]
     
-    def aggregate(self,mdp,z,t_int,distUB):
+    def generalized_aggregate(self,mdp,z,t_int,distUB):
         rDistance=[]
         for i in range(len(z)):
             rDistance.append(self.rDist(mdp,z[i],z,t_int,distUB))
@@ -407,6 +407,7 @@ class MCPE():
             temp_1=max(temp_1, temp_2)
             k+=1
             t_0=partitionPoint+(k+1)*s
+        print(tempList)
         return 2*temp_1
     
     def LSW_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
@@ -423,8 +424,8 @@ class MCPE():
             z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
             
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
-        g= self.aggregate(myMDP,z,partitionPoint,distUB)
-        #g= self.aggregate2(myMDP,z)
+        g= self.generalized_aggregate(myMDP,z,partitionPoint,distUB)
+        #g= self.aggregate_median(myMDP,z)
         
         #To check the following block
         S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
@@ -444,17 +445,17 @@ class MCPE():
         z=numpy.zeros((len(subSamples),len(featuresMatrix)))
         for i in range(len(subSamples)):
             FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
-            regc=self.computeLambdas(myMDP, featuresMatrix,[regCoef], len(subSamples[i]), pow_exp)
+            regc=self.computeLambdas(myMDP, featuresMatrix,regCoef, len(subSamples[i]), pow_exp)
             z[i]=numpy.ravel(self.LSL(numpy.ravel(FVMC[2]), myMDP, featuresMatrix,regc[0],len(subSamples[i])))
             #z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
             
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
-        g= self.aggregate(myMDP,z,partitionPoint,distUB)
-        #g= self.aggregate2(myMDP,z)
+        g= self.generalized_aggregate(myMDP,z,partitionPoint,distUB)
+        #g= self.aggregate_median(myMDP,z)
         
         #To check the following block
         S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
-        print(S_z)
+        #print(S_z)
         cov_X=(S_z/alpha)*numpy.identity(dim)
         ethaX=numpy.random.multivariate_normal(numpy.zeros(dim),cov_X)
         #print(S_z)
