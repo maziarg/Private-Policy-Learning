@@ -20,7 +20,7 @@ class expParameters(object):
         self.delta=0.1
         self.regCoefs=[0.01,0.1,1,10,100,1000,10000]
         self.pow_exp=[0.4,0.5,0.6,0.7,0.8]
-        self.aggregationFactor=1
+        self.aggregationFactor=2
         self.lambdaCoef=0.5
         self.numberOfSubsamples= 10
         self.distUB=10

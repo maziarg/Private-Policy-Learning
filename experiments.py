@@ -95,7 +95,7 @@ class experiment():
         myMCPE=MCPE(mdp,self.__Phi,self.__policy)
         V = myMCPE.realV(mdp)
         rho = mdp.startStateDistribution()
-        ridgeParam=myMCPE.computeLambdas(mdp, self.__Phi, regCoef, batchSize, pow_exp)
+        ridgeParam=myMCPE.computeLambdas(mdp, self.__Phi, regCoef, batchSize, pow_exp[0])
         err_new_lsl=[]
         for k in range(self.__numrounds):
             if (self.__batch_gen_param_trigger=="Y"):
@@ -103,18 +103,18 @@ class experiment():
             else:
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
-            tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParam[0], batchSize)
+            tL=myMCPE.LSL(FVMC[2], mdp, self.__Phi, ridgeParam[0], batchSize,FVMC[1])
             VL = self.__Phi*tL
             dpLSL=myMCPE.GS_based_DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParam[0], batchSize, rho, self.__policy)
             dpLSL_smoothed=myMCPE.DPLSL(FVMC[2],FVMC[1], mdp, self.__Phi, mdp.getGamma(), self.__epsilon, self.__delta, ridgeParam[0], batchSize, rho, self.__policy)
-            temp5=reshape(dpLSL[0], (len(dpLSL[0]),1))
-            temp6=reshape(dpLSL_smoothed[0], (len(dpLSL_smoothed[0]),1))
-            dpVL = self.__Phi*temp5
-            dpVL_smoothed=self.__Phi*temp6
+            dpLSL=reshape(dpLSL[0], (len(dpLSL[0]),1))
+            dpLSL_smoothed=reshape(dpLSL_smoothed[0], (len(dpLSL_smoothed[0]),1))
+            dpVL_GS = numpy.mat(self.__Phi)*numpy.mat(dpLSL)
+            dpVL_smoothed=numpy.mat(self.__Phi)*numpy.mat(dpLSL_smoothed)
             diff_V_VL=myMCPE.weighted_dif_L2_norm(mdp, V, VL)
-            diff_V_dpVL=myMCPE.weighted_dif_L2_norm(mdp,V,dpVL)
+            diff_V_dpVLGS=myMCPE.weighted_dif_L2_norm(mdp,V,dpVL_GS)
             diff_V_dpVL_smoothed=myMCPE.weighted_dif_L2_norm(mdp,V, dpVL_smoothed)
-            err_new_lsl.append([ridgeParam[0],diff_V_VL, diff_V_dpVL,diff_V_dpVL_smoothed])
+            err_new_lsl.append([ridgeParam[0],diff_V_VL, diff_V_dpVLGS,diff_V_dpVL_smoothed])
         return err_new_lsl
         
     def TransitionFunction(self, sourceState, destState):
@@ -167,7 +167,7 @@ class experiment():
             tempMCPE=myMCPE.LSW_subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], batchSize, FVMC[2],epsilon,delta,distUB)
             resultsDPSA.append(tempMCPE[0])
             resultsSA.append(tempMCPE[1])
-            temFVMC.append(numpy.mat(FVMC[0].T)*numpy.mat(Phi))
+            temFVMC.append(numpy.mat(Phi)*numpy.mat(FVMC[0]))
         return [resultsDPSA,resultsSA,temFVMC,V]
     
     def LSL_subSampleAggregateExperiment(self, mdp, regCoef,batchSize,pow_exp,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi,distUB):   
@@ -184,11 +184,11 @@ class experiment():
             else:
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
-            LSL_result=myMCPE.LSL(FVMC[2], mdp, self.__Phi, regCoef, batchSize)
-            tempMCPE=myMCPE.LSL_subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(),ridgeParam[0], pow_exp[0], batchSize, FVMC[2],epsilon,delta,distUB)
+            LSL_result=myMCPE.LSL(FVMC[2], mdp, self.__Phi, regCoef, batchSize,FVMC[1])
+            tempMCPE=myMCPE.LSL_subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(), [regCoef], pow_exp[0], batchSize, epsilon,delta,distUB)
             resultsDPSA.append(tempMCPE[0])
             resultsSA.append(tempMCPE[1])
-            temLSL.append(numpy.mat(LSL_result.T)*numpy.mat(Phi))
+            temLSL.append(numpy.mat(Phi)*numpy.mat(LSL_result))
         return [resultsDPSA,resultsSA,temLSL,V]
             
     
@@ -313,7 +313,7 @@ def run_newGS_LSL_experiments(experimentList,myMDP_Params,myExp_Params,myMDP):
     
 def run_newGS_LSL_vs_SmoothLSL_experiments(experimentList,myMDP_Params,myExp_Params,myMDP):   
     i=0
-    regCoef=[100]
+    regCoef=[0.5]
     expResults=[]
     #expSmoothLSL_Resualts=[]
     for i in range(len(myExp_Params.experimentBatchLenghts)):
@@ -321,9 +321,9 @@ def run_newGS_LSL_vs_SmoothLSL_experiments(experimentList,myMDP_Params,myExp_Par
     ax = plt.gca()
     ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
     ax.set_xscale('log')
-    realV_vs_FVMC=[]
-    LSL_vs_DPLSL=[]
-    LSL_vs_Smoothed_DPLSL=[]
+    realV_vs_LSL=[]
+    Real_vs_DPLSL=[]
+    Real_vs_Smoothed_DPLSL=[]
     i=0
     for i in range(len(myExp_Params.experimentBatchLenghts)):
         temp1=[]
@@ -333,59 +333,59 @@ def run_newGS_LSL_vs_SmoothLSL_experiments(experimentList,myMDP_Params,myExp_Par
             temp1.append(expResults[i][j][1])
             temp2.append(expResults[i][j][2])
             temp3.append(expResults[i][j][3])
-        realV_vs_FVMC.append(temp1)
-        LSL_vs_DPLSL.append(temp2)
-        LSL_vs_Smoothed_DPLSL.append(temp3)
+        realV_vs_LSL.append(temp1)
+        Real_vs_DPLSL.append(temp2)
+        Real_vs_Smoothed_DPLSL.append(temp3)
     
-    mean_realV_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
-    std_realV_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    mean_realV_vs_LSL=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    std_realV_vs_LSL=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     for j in range(len(myExp_Params.experimentBatchLenghts)):
-        mean_realV_vs_FVMC[j] = numpy.average(realV_vs_FVMC[j])#blm
-        std_realV_vs_FVMC [j] = numpy.std(realV_vs_FVMC[j])#bld
-        bldu[j] = math.log10(mean_realV_vs_FVMC[j]+std_realV_vs_FVMC [j])-math.log10(mean_realV_vs_FVMC[j])
-        bldl[j] = -math.log10(mean_realV_vs_FVMC[j]-std_realV_vs_FVMC [j])+math.log10(mean_realV_vs_FVMC[j])
-        blm[j] = math.log10(mean_realV_vs_FVMC[j])
+        mean_realV_vs_LSL[j] = numpy.average(realV_vs_LSL[j])#blm
+        std_realV_vs_LSL [j] = numpy.std(realV_vs_LSL[j])#bld
+        bldu[j] = math.log10(mean_realV_vs_LSL[j]+std_realV_vs_LSL [j])-math.log10(mean_realV_vs_LSL[j])
+        bldl[j] = -math.log10(mean_realV_vs_LSL[j]-std_realV_vs_LSL [j])+math.log10(mean_realV_vs_LSL[j])
+        blm[j] = math.log10(mean_realV_vs_LSL[j])
     
-    mean_DPLSL_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
-    std_LSL_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    mean_DPLSL_vs_Real=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    std_DPLSL_vs_Real=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     lsl_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     lsl_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     lsl_bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     for j in range(len(myExp_Params.experimentBatchLenghts)):
-        mean_DPLSL_vs_FVMC[j] = numpy.average(LSL_vs_DPLSL[j])#lsl_blm
-        std_LSL_vs_FVMC [j] = numpy.std(LSL_vs_DPLSL[j])#bld
-        lsl_bldu[j] = math.log10(mean_DPLSL_vs_FVMC[j]+std_LSL_vs_FVMC [j])-math.log10(mean_DPLSL_vs_FVMC[j])
-        lsl_bldl[j] = -math.log10(mean_DPLSL_vs_FVMC[j]-std_LSL_vs_FVMC [j])+math.log10(mean_DPLSL_vs_FVMC[j])
-        lsl_blm[j] = math.log10(mean_DPLSL_vs_FVMC[j])
+        mean_DPLSL_vs_Real[j] = numpy.average(Real_vs_DPLSL[j])#lsl_blm
+        std_DPLSL_vs_Real [j] = numpy.std(Real_vs_DPLSL[j])#bld
+        lsl_bldu[j] = math.log10(mean_DPLSL_vs_Real[j]+std_DPLSL_vs_Real [j])-math.log10(mean_DPLSL_vs_Real[j])
+        lsl_bldl[j] = -math.log10(mean_DPLSL_vs_Real[j]-std_DPLSL_vs_Real [j])+math.log10(mean_DPLSL_vs_Real[j])
+        lsl_blm[j] = math.log10(mean_DPLSL_vs_Real[j])
       
-    mean_Smoothed_DPLSL_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
-    std_Smoothed_LSL_vs_FVMC=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    mean_Smoothed_DPLSL_vs_Real=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
+    std_Smoothed_DPLSL_vs_Real=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     lsl_smoothed_blm=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     lsl_smoothed_bldl=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     lsl_smoothed_bldu=numpy.zeros(len(myExp_Params.experimentBatchLenghts))
     for j in range(len(myExp_Params.experimentBatchLenghts)):
-        mean_Smoothed_DPLSL_vs_FVMC[j] = numpy.average(LSL_vs_Smoothed_DPLSL[j])#lsl_blm
-        std_Smoothed_LSL_vs_FVMC [j] = numpy.std(LSL_vs_Smoothed_DPLSL[j])#bld
-        lsl_smoothed_bldu[j] = math.log10(mean_Smoothed_DPLSL_vs_FVMC[j]+std_Smoothed_LSL_vs_FVMC [j])-math.log10(mean_Smoothed_DPLSL_vs_FVMC[j])
-        lsl_smoothed_bldl[j] = -math.log10(mean_Smoothed_DPLSL_vs_FVMC[j]-std_Smoothed_LSL_vs_FVMC [j])+math.log10(mean_Smoothed_DPLSL_vs_FVMC[j])
-        lsl_smoothed_blm[j] = math.log10(mean_Smoothed_DPLSL_vs_FVMC[j])
+        mean_Smoothed_DPLSL_vs_Real[j] = numpy.average(Real_vs_Smoothed_DPLSL[j])#lsl_blm
+        std_Smoothed_DPLSL_vs_Real [j] = numpy.std(Real_vs_Smoothed_DPLSL[j])#bld
+        lsl_smoothed_bldu[j] = math.log10(mean_Smoothed_DPLSL_vs_Real[j]+std_Smoothed_DPLSL_vs_Real [j])-math.log10(mean_Smoothed_DPLSL_vs_Real[j])
+        lsl_smoothed_bldl[j] = -math.log10(mean_Smoothed_DPLSL_vs_Real[j]-std_Smoothed_DPLSL_vs_Real [j])+math.log10(mean_Smoothed_DPLSL_vs_Real[j])
+        lsl_smoothed_blm[j] = math.log10(mean_Smoothed_DPLSL_vs_Real[j])
        
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, blm,  bldu, bldl)
+    ax.errorbar(myExp_Params.experimentBatchLenghts, blm,  bldu, bldl)
     ax.errorbar(myExp_Params.experimentBatchLenghts, lsl_blm,  lsl_bldu, lsl_bldl)
     ax.errorbar(myExp_Params.experimentBatchLenghts, lsl_smoothed_blm,  lsl_smoothed_bldu, lsl_smoothed_bldl)
 
     plt.xscale('log')
     #plt.yscale('log')
     #plt.ylim((-10,10))
-    plt.ylabel('W-RMSE')
-    plt.xlabel('log(m)')
-    plt.legend(["True vs. GS-DPLSL","True vs. Smoothed-DPLSL" ],loc=7)
-    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", \lambda= 100 m^"+str(myExp_Params.pow_exp))
-    #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
-    #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
+    plt.ylabel('(log)W-RMSE')
+    plt.xlabel('(log)m')
+    plt.legend(["True vs. LSL","True vs. GS-DPLSL","True vs. Smoothed-DPLSL" ],loc=7)
+    plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", \lambda= 0.5 m^"+str(myExp_Params.pow_exp[0]))
+    #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_LSL)
+    #ax.plot(myExp_Params.experimentBatchLenghts,Real_vs_DPLSL)
     plt.show()
 
 def run_lstdExperiment(myMDP_Params, myExp_Params,myMDP,lambda_coef):
@@ -536,10 +536,10 @@ def run_LSL_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
         tempV=numpy.reshape(expResultsV[j],(len(experimentList[i].getPhi()),1))
         tempLSL=[[] for x in range(len(myExp_Params.experimentBatchLenghts))]
         for k in range(myExp_Params.numRounds):
-            tempDPSA[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,numpy.reshape(expResultsDPSA[j][k],(len(experimentList[i].getPhi()),1))))
-            tempSA[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,numpy.reshape(expResultsSA[j][k],(len(experimentList[i].getPhi()),1))))
+            tempDPSA[j].append(linalg.norm(tempV-numpy.reshape(expResultsDPSA[j][k],(len(experimentList[i].getPhi()),1))))
+            tempSA[j].append(linalg.norm(tempV-numpy.reshape(expResultsSA[j][k],(len(experimentList[i].getPhi()),1))))
             vhat=numpy.reshape(expResultsLSW[j][k],(len(experimentList[i].getPhi()),1))
-            tempLSL[j].append(myMCPE.weighted_dif_L2_norm(myMDP,tempV,vhat))
+            tempLSL[j].append(linalg.norm(tempV-vhat))
         #tempDPSA=tempDPSA/myExp_Params.numRounds
         #tempSA=tempSA/myExp_Params.numRounds
         #tempLSW=tempLSW/myExp_Params.numRounds
@@ -573,14 +573,14 @@ def run_LSL_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
         V_vs_SA_blm[j] = math.log10((mean_V_vs_SA[j]))
         
     
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSL_blm,  V_vs_LSL_bldu, V_vs_LSL_bldl)
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSL_blm,  V_vs_LSL_bldu, V_vs_LSL_bldl)
     ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  V_vs_SA_bldu, V_vs_SA_bldl)
-    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  V_vs_DPSA_bldu, V_vs_DPSA_bldl)
+    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  V_vs_DPSA_bldu, V_vs_DPSA_bldl)
 
     
-    plt.ylabel('log10(W-RMSE)')
+    plt.ylabel('l2-Norm')
     plt.xlabel('Batch Size')
-    plt.legend(["SA(LSL)-Real","DPSA(LSL)-Real"],loc=2)
+    plt.legend(["LSL-Real","SA(LSL)-Real"],loc=2)
     plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)"+"  lambda= "+str(myExp_Params.lambdaCoef)+"m^"+str(myExp_Params.pow_exp[0]))
     #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
