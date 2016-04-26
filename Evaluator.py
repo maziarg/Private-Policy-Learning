@@ -1,5 +1,5 @@
 from __future__ import division
-import numpy 
+import numpy
 import scipy
 import matplotlib.pyplot as plt
 from numpy import math, Inf, reshape, ravel
@@ -182,7 +182,7 @@ class MCPE():
     
     def SmootBound_LSW(self, myMDP, Gamma, countXVec, beta, startDist):
         lInfty=int(numpy.linalg.norm(countXVec, Inf))
-        k=0
+
         Vals=[]
         for k in range(lInfty):
             Vals.append(self.varPhi_w(countXVec, k, Gamma)*math.exp(-k*beta))
@@ -193,6 +193,8 @@ class MCPE():
         normPhi=numpy.linalg.norm(featurmatrix)
         maxRho=numpy.linalg.norm(rho,Inf)
         c_lambda=normPhi*maxRho/(math.sqrt(2*regCoef))
+        #print('===============================================')
+        #print(regCoef)
         l2Rho=numpy.linalg.norm(rho)
         temp=0
         Vals=[]
@@ -201,14 +203,15 @@ class MCPE():
             for s in range(len(myMDP.getStateSpace())-1):
                 minVal=minVal+rho[s]*min(countXVec[s]+k,numTrajectories)
             temp=c_lambda*math.sqrt(minVal)+l2Rho
-            Vals.append((temp**2)*math.exp(-k*beta))    
-        upperBound=max(Vals)  
+            Vals.append((math.pow(temp,2))*math.exp(-k*beta))    
+        upperBound=max(Vals)
+        #print('Smooth upper bound= '+str(upperBound))  
         return upperBound  
         
     def DPLSW(self, thetaTild, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta,batchSize, initStateDist="uniform", pi="uniform"):
         dim=len(featuresMatrix.T)
         alpha=(5.0*numpy.sqrt(2*numpy.math.log(2.0/delta)))/epsilon
-        beta= (epsilon/4)*(dim+numpy.math.log(2.0/delta))
+        beta= (epsilon/4)/(dim+numpy.math.log(2.0/delta))
         
         Gamma_w=myMDP.getGammaMatrix()
         for i in range(len(countXVec)):
@@ -219,7 +222,11 @@ class MCPE():
             GammaSqrt[i][i]=math.sqrt(Gamma_w[i][i])
             
         GammaSqrtPhi= numpy.mat(GammaSqrt) *numpy.mat(featuresMatrix)
-        GammaSqrtPhiInv=linalg.pinv(GammaSqrtPhi) 
+        if self.is_invertible(GammaSqrtPhi):
+            GammaSqrtPhiInv=linalg.inv(GammaSqrtPhi)
+        else:
+            GammaSqrtPhiInv=linalg.pinv(GammaSqrtPhi)
+            
         PsiBetaX= self.SmootBound_LSW(myMDP, Gamma_w, countXVec, beta, myMDP.startStateDistribution())
         sigmmaX= (alpha*myMDP.getMaxReward())/(1-gamma)
         sigmmaX=sigmmaX*numpy.linalg.norm(GammaSqrtPhiInv)
@@ -266,22 +273,22 @@ class MCPE():
         thetaTil_X=temp*FirstVisitVector     
         return thetaTil_X
         
-    def DPLSL (self, FirstVisitVector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
+    def DPLSL (self, LSL_Vector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
         dim=len(featuresMatrix.T)
         Rho=numpy.reshape(rho,(len(rho),1))
-        thetaTil_X= self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories,countXVec)
+        thetaTil_X= LSL_Vector #self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories,countXVec)
         normPhi=numpy.linalg.norm(featuresMatrix)
         maxRho=numpy.linalg.norm(Rho,Inf)
         alpha=(5.0*numpy.sqrt(2*numpy.math.log(2.0/delta)))/epsilon
-        beta= (epsilon/4)*(dim+numpy.math.log(2.0/delta))
-        
-        
-        PsiBetaX= self.SmoothBound_LSL(featuresMatrix, myMDP, countXVec, myMDP.startStateDistribution(), regCoef, beta, numTrajectories)
-        
+        beta= (epsilon/4)/(dim+numpy.math.log(2.0/delta))
+
+        PsiBetaX = self.SmoothBound_LSL(featuresMatrix, myMDP, countXVec, myMDP.startStateDistribution(), regCoef, beta, numTrajectories)
         
         sigma_X=2*alpha*myMDP.getMaxReward()*normPhi/(1-myMDP.getGamma())
         sigma_X=sigma_X/(regCoef-maxRho*numpy.math.pow(normPhi, 2))
-        sigma_X=sigma_X*(PsiBetaX**0.5)
+        sigma_X=sigma_X*(numpy.math.pow(PsiBetaX,0.5))
+        
+        #print(sigma_X)
         cov_X=math.pow(sigma_X,2)*numpy.identity(dim)
         mean=numpy.zeros(dim)
         ethaX=numpy.random.multivariate_normal(mean,cov_X)
@@ -425,7 +432,7 @@ class MCPE():
             temp_1=max(temp_1, temp_2)
             k+=1
             t_0=partitionPoint+(k+1)*s
-        print(tempList)
+        #print(tempList)
         return 2*temp_1
     
     def LSW_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
@@ -454,14 +461,15 @@ class MCPE():
     def LSL_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef, pow_exp,numTrajectories,epsilon,delta,distUB):
         dim=len(featuresMatrix.T)
         alpha=(5.0*numpy.sqrt(2*numpy.math.log(2.0/delta)))/epsilon
-        beta= (epsilon/4)*(dim+numpy.math.log(2.0/delta))
+        #beta= (epsilon/4)*(dim+numpy.math.log(2.0/delta))
+        beta= (s/(2*numberOfsubSamples))
         
         subSamples=self.subSampleGen(batch, numberOfsubSamples)
-        z=numpy.zeros((len(subSamples),len(featuresMatrix)))
+        z=numpy.zeros((len(subSamples),dim))
         for i in range(len(subSamples)):
             FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
             regc=self.computeLambdas(myMDP, featuresMatrix,regCoef, len(subSamples[i]), pow_exp)
-            z[i]=numpy.ravel(featuresMatrix*self.LSL(FVMC[2], myMDP, featuresMatrix,regc[0],len(subSamples[i]),FVMC[1]))
+            z[i]=numpy.ravel(self.LSL(FVMC[2], myMDP, featuresMatrix,regc[0],len(subSamples[i]),FVMC[1]))
             #z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
             
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)  
@@ -471,12 +479,13 @@ class MCPE():
         #To check the following block
         S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
         #print(S_z)
-        cov_X=(S_z/alpha)*numpy.identity(len(featuresMatrix))
-        ethaX=numpy.random.multivariate_normal(numpy.zeros(len(featuresMatrix)),cov_X)
+        cov_X=(S_z/alpha)*numpy.identity((dim))
+        ethaX=numpy.random.multivariate_normal(numpy.zeros(dim),cov_X)
         #print(S_z)
         #noise=(S_z/alpha)*ethaX
-        
-        return [g[1]+ethaX,g[1]]
+        #numpy.mat(featuresMatrix)*numpy.mat(g[1]+ethaX)
+        temp_priv=numpy.mat(featuresMatrix)*numpy.mat(g[1]+ethaX).T
+        return [temp_priv, numpy.mat(featuresMatrix)*numpy.mat(g[1]).T]
     
     
     def getminLambda(self, myMDP,featurmatrix):
