@@ -1,5 +1,6 @@
 from __future__ import division
 import numpy
+import numpy as np
 import scipy
 import matplotlib.pyplot as plt
 from numpy import math, Inf, reshape, ravel
@@ -18,6 +19,8 @@ import simplejson
 import re
 from math import gamma
 from blaze import nan
+from scipy.spatial.distance import cdist, euclidean
+
 
 '''
 Created on Jan 17, 2016
@@ -196,14 +199,14 @@ class MCPE():
         #print('===============================================')
         #print(regCoef)
         l2Rho=numpy.linalg.norm(rho)
-        temp=0
+        phi_k=0
         Vals=[]
         for k in range(0,numTrajectories):
             minVal=0
             for s in range(len(myMDP.getStateSpace())-1):
                 minVal=minVal+rho[s]*min(countXVec[s]+k,numTrajectories)
-            temp=c_lambda*math.sqrt(minVal)+l2Rho
-            Vals.append((math.pow(temp,2))*math.exp(-k*beta))    
+            phi_k=c_lambda*math.sqrt(minVal)+l2Rho
+            Vals.append((math.pow(phi_k,2))*math.exp(-k*beta))    
         upperBound=max(Vals)
         #print('Smooth upper bound= '+str(upperBound))  
         return upperBound  
@@ -243,8 +246,8 @@ class MCPE():
         #v=v.flatten()
         #vhat=vhat.flatten()
         Gamma = mdp.getGammaMatrix()
-        temp1=numpy.mat((v-vhat).T)*numpy.mat(Gamma)
-        temp=numpy.mat(temp1)*numpy.mat((v-vhat))
+        temp1=numpy.mat((numpy.ravel(v)-numpy.ravel(vhat)))*numpy.mat(Gamma)
+        temp=temp1*numpy.mat(numpy.ravel(v)-numpy.ravel(vhat)).T
         temp=math.sqrt(temp)
         return temp
 
@@ -274,6 +277,7 @@ class MCPE():
         return thetaTil_X
         
     def DPLSL (self, LSL_Vector, countXVec, myMDP, featuresMatrix, gamma, epsilon, delta, regCoef, numTrajectories, rho, pi="uniform"):
+        regCoef=regCoef
         dim=len(featuresMatrix.T)
         Rho=numpy.reshape(rho,(len(rho),1))
         thetaTil_X= LSL_Vector #self.LSL(FirstVisitVector, myMDP, featuresMatrix, regCoef, numTrajectories,countXVec)
@@ -379,6 +383,35 @@ class MCPE():
     def getKey2(self, item):
         return item[1][0]
     
+    def geometric_median(self,X, eps=1e-5):
+        y = np.mean(X, 0)
+
+        while True:
+            D = cdist(X, [y])
+            nonzeros = (D != 0)[:, 0]
+    
+            Dinv = 1 / D[nonzeros]
+            Dinvs = np.sum(Dinv)
+            W = Dinv / Dinvs
+            T = np.sum(W * X[nonzeros], 0)
+    
+            num_zeros = len(X) - np.sum(nonzeros)
+            if num_zeros == 0:
+                y1 = T
+            elif num_zeros == len(X):
+                return y
+            else:
+                R = (T - y) * Dinvs
+                r = np.linalg.norm(R)
+                rinv = 0 if r == 0 else num_zeros/r
+                y1 = max(0, 1-rinv)*T + min(1, rinv)*y
+    
+            if euclidean(y, y1) < eps:
+                return y1
+    
+            y = y1
+            
+               
     def aggregate_median(self,mdp,z,distUB):
         
         t_distS=[]
@@ -447,7 +480,8 @@ class MCPE():
             z[i]= ravel(numpy.mat(featuresMatrix)*numpy.mat(FVMC[0]))#this is LSW
             
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
-        g= self.generalized_median(myMDP,z,partitionPoint,distUB)
+        #g= self.generalized_median(myMDP,z,partitionPoint,distUB)
+        g=self.geometric_median(z)
         #g= self.aggregate_median(myMDP,z)
         
         #To check the following block
@@ -456,7 +490,8 @@ class MCPE():
         ethaX=numpy.random.multivariate_normal(numpy.zeros(len(featuresMatrix)),cov_X)
         #print(S_z)
         #noise=(S_z/alpha)*ethaX
-        return [g[1]+ethaX,g[1]]
+        #return [g[1]+ethaX,g[1]]
+        return [g+ethaX,g]
                  
     def LSL_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef, pow_exp,numTrajectories,epsilon,delta,distUB):
         dim=len(featuresMatrix.T)
@@ -468,8 +503,10 @@ class MCPE():
         z=numpy.zeros((len(subSamples),dim))
         for i in range(len(subSamples)):
             FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
-            regc=self.computeLambdas(myMDP, featuresMatrix,regCoef, len(subSamples[i]), pow_exp)
-            z[i]=numpy.ravel(self.LSL(FVMC[2], myMDP, featuresMatrix,regc[0],len(subSamples[i]),FVMC[1]))
+            #regc=self.computeLambdas(myMDP, featuresMatrix,regCoef, len(subSamples[i]), pow_exp)
+            #z[i]=numpy.ravel(self.LSL(FVMC[2], myMDP, featuresMatrix,regc[0][0],len(subSamples[i]),FVMC[1]))
+            SA_reidge_coef=100*math.pow(len(subSamples[i]), 0.5)
+            z[i]=numpy.ravel(self.LSL(FVMC[2], myMDP, featuresMatrix,SA_reidge_coef,len(subSamples[i]),FVMC[1]))
             #z[i]= numpy.squeeze(numpy.asarray(FVMC[0]))#this is LSW
             
         partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)  
@@ -493,12 +530,14 @@ class MCPE():
         l = normPhi**2
         l*=numpy.max(myMDP.startStateDistribution())
         return l
-    def computeLambdas(self, myMDP, featurmatrix ,coefs,batchSize,p):
+    def computeLambdas(self, myMDP, featurmatrix, coefs, batchSize , power_list):
         lambdaS=[]
         lambdaOffset= self.getminLambda(myMDP, featurmatrix)
-        for i in range(len(coefs)):
-            lambdaS.append(lambdaOffset + coefs[i]*(batchSize**p))
-        return lambdaS
+        for p in power_list:
+            for c in coefs:
+                lambdaS.append([(lambdaOffset + c*(batchSize**p)),[c,p]])
+        a=sorted(lambdaS, key=self.getKey)
+        return a
 
     def computeEligibilities(self, featureMatrix, lambda_coef, trajectory, gamma):
         dim=len(featureMatrix)
