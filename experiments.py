@@ -206,8 +206,8 @@ class experiment():
         V = myMCPE.realV(mdp)
         rho = mdp.startStateDistribution()
         
-        epsilon = math.log(1.5+math.sqrt(0.25+(batchSize*epsilon_star)/(math.sqrt(8*subSampleSize)*math.log(1/delta_prime))))
-        delta= (batchSize*(delta_star-delta_prime)/(subSampleSize*numberOfsubSamples))*(1/(1.5+math.sqrt(0.25+(batchSize*epsilon_star)/(math.sqrt(8*subSampleSize)*math.log(1/delta_prime)))))
+        epsilon = math.log(1.5+math.sqrt(0.25+(batchSize*epsilon_star)/(subSampleSize*(-1+math.sqrt(8*numberOfsubSamples*math.log(1/delta_prime))))))
+        delta= (batchSize*(delta_star-delta_prime)/(subSampleSize*numberOfsubSamples))*(1/(1.5+math.sqrt(0.25+(batchSize*epsilon_star)/(subSampleSize*(-1+math.sqrt(8*numberOfsubSamples*math.log(1/delta_prime)))))))
         
         resultsDPSA=[]
         resultsSA=[]
@@ -220,7 +220,7 @@ class experiment():
             else:
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
-            DPLSW_result.append(numpy.mat(Phi)*numpy.mat(myMCPE.DPLSW(FVMC[0], FVMC[1], mdp, self.__Phi, mdp.getGamma(), epsilon, delta,batchSize)[0]).T)
+            DPLSW_result.append(numpy.mat(Phi)*numpy.mat(myMCPE.DPLSW(FVMC[0], FVMC[1], mdp, self.__Phi, mdp.getGamma(), epsilon_star, delta_star,batchSize)[0]).T)
             tempMCPE=myMCPE.LSW_subSampleAggregate(S, numberOfsubSamples,mdp,self.getPhi(),epsilon,delta,subSampleSize)
             resultsDPSA.append(tempMCPE[0])
             resultsSA.append(tempMCPE[1])
