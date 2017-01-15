@@ -31,7 +31,7 @@ from simpleMC import MChain
 from scipy.cluster.hierarchy import maxdists
 class MCPE():
     def __init__(self, mdp, featureMatrix, policy, batch_gen_trigger="N", huge_batch_name="huge_batch.txt"):
-        self.gamma=mdp.getGamma()
+        self.gamma_factor=mdp.getGamma()
         self.MaxRewards=mdp.getMaxReward()
         self.pi=policy
         self.goalStates=mdp.getGoalstates()
@@ -41,7 +41,7 @@ class MCPE():
         self.batch_gen_trigger=batch_gen_trigger
         #To Do: 200 is set manually here, which is wrong, this needs to be fixed
         if batch_gen_trigger=="Y":
-            self.InitHugeBatch= self.batchGen(mdp, 200, 5000, self.gamma, self.pi, mdp.startStateDistribution())
+            self.InitHugeBatch= self.batchGen(mdp, 200, 5000, self.gamma_factor, self.pi, mdp.startStateDistribution())
             self.batch_gen_trigger="N"
             
     def FirstVisit(self,trajectory, state, gamma):
@@ -231,7 +231,7 @@ class MCPE():
             GammaSqrtPhiInv=linalg.pinv(GammaSqrtPhi)
             
         PsiBetaX= self.SmootBound_LSW(myMDP, Gamma_w, countXVec, beta, myMDP.startStateDistribution())
-        sigmmaX= (alpha*myMDP.getMaxReward())/(1-gamma)
+        sigmmaX= (alpha*myMDP.getMaxReward())/(1-self.gamma_factor)
         sigmmaX=sigmmaX*numpy.linalg.norm(GammaSqrtPhiInv)
         sigmmaX=sigmmaX*math.pow(PsiBetaX, .5)
         cov_X=math.pow(sigmmaX,2)*numpy.identity(dim)
@@ -241,6 +241,8 @@ class MCPE():
         ethaX=numpy.squeeze(numpy.asarray(ethaX))
         thetaTild_priv=thetaTild+ethaX
         return [thetaTild_priv,thetaTild,math.pow(sigmmaX,2)]
+    
+    
     
     def weighted_dif_L2_norm(self, mdp, v ,vhat):
         #v=v.flatten()
@@ -358,9 +360,8 @@ class MCPE():
     def picklines(self,thefile, whatlines):
         return [x for i, x in enumerate(thefile) if i in whatlines]
     
-    def subSampleGen(self,batch, numberOfsubSamples):
-        n=len(batch)
-        subSampelSize=int(n/numberOfsubSamples)
+    def subSampleGen(self,batch, numberOfsubSamples, subSampelSize):
+        #n=len(batch)
         #residue= n - subSampelSize*numberOfsubSamples
         subSamples=[]
         for i in range(numberOfsubSamples):
@@ -468,31 +469,42 @@ class MCPE():
         #print(tempList)
         return 2*temp_1
     
-    def LSW_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,numTrajectories,FirstVisitVector,epsilon,delta,distUB):
+    def LSW_subSampleAggregate(self, batch, numberOfsubSamples,myMDP,featuresMatrix,epsilon,delta,subSampleSize):
         dim=len(featuresMatrix.T)
-        alpha=(5.0*numpy.sqrt(2*numpy.math.log(2.0/delta)))/epsilon
-        beta= (epsilon/4)*(dim+numpy.math.log(2.0/delta))
+        #alpha=(5.0*numpy.sqrt(2*numpy.math.log(2.0/delta)))/epsilon
+        #beta= (epsilon/4)*(dim+numpy.math.log(2.0/delta))
         
-        subSamples=self.subSampleGen(batch, numberOfsubSamples)
+        subSamples=self.subSampleGen(batch, numberOfsubSamples, subSampleSize)
         z=numpy.zeros((len(subSamples),len(featuresMatrix)))
+        g=numpy.zeros((len(subSamples),len(featuresMatrix)))
         for i in range(len(subSamples)):
             FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
-            z[i]= ravel(numpy.mat(featuresMatrix)*numpy.mat(FVMC[0]))#this is LSW
+            DPLSWTemp= self.DPLSW(FVMC[0], FVMC[1], myMDP, featuresMatrix, gamma, epsilon, delta, subSampleSize, "uniform", "uniform")
+            g[i]= ravel(numpy.mat(featuresMatrix)*numpy.mat(FVMC[0]))
+            z[i]= ravel(numpy.mat(featuresMatrix)*numpy.mat(DPLSWTemp[0]).T)#this is LSW
+        tempAddz=numpy.zeros(dim)
+        tempAddg=numpy.zeros(dim)
+        
+        for j in range(len(z)):
+            tempAddz+=z[j]
+            tempAddg+=g[j]
             
-        partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
+        
+        #partitionPoint=int((numberOfsubSamples+math.sqrt(numberOfsubSamples))/2)+1   
         #g= self.generalized_median(myMDP,z,partitionPoint,distUB)
-        g=self.geometric_median(z)
+        #g=self.geometric_median(z)
         #g= self.aggregate_median(myMDP,z)
         
         #To check the following block
-        S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
-        cov_X=(S_z/alpha)*numpy.identity(len(featuresMatrix))
-        ethaX=numpy.random.multivariate_normal(numpy.zeros(len(featuresMatrix)),cov_X)
+        #S_z=self.computeAggregateSmoothBound(z, beta, s,myMDP,distUB)
+        #cov_X=(S_z/alpha)*numpy.identity(len(featuresMatrix))
+        
+        #ethaX=numpy.random.multivariate_normal(numpy.zeros(len(featuresMatrix)),cov_X)
         #print(S_z)
         #noise=(S_z/alpha)*ethaX
         #return [g[1]+ethaX,g[1]]
-        return [g+ethaX,g]
-                 
+        return [tempAddz/len(subSamples),tempAddg/len(subSamples)]
+    
     def LSL_subSampleAggregate(self, batch, s, numberOfsubSamples,myMDP,featuresMatrix,regCoef, pow_exp,numTrajectories,epsilon,delta,distUB):
         dim=len(featuresMatrix.T)
         alpha=(5.0*numpy.sqrt(2*numpy.math.log(2.0/delta)))/epsilon

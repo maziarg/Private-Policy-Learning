@@ -16,12 +16,13 @@ from expParams import expParameters
 from mdpParams import mdpParameteres
 from IPython.core.tests.test_formatters import numpy
 from radialBasis import  radialBasisFunctions
+#from curses.has_key import python
 #import seaborn as sns
 
 class experiment():
     def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy="uniform", batch_gen_param="N"):
         #self.__Phi=self.featureProducer(aggregationFactor, stateSpace)
-        self.__Phi=self.radialfeature(stateSpace)
+        self.__Phi=self.featureProducer(aggregationFactor, stateSpace)
         self.__epsilon=epsilon
         self.__delta=delta
         self.__lambdaCalss=lambdaClass
@@ -30,6 +31,8 @@ class experiment():
         self.__policy=policy
         self.__stateSpace=stateSpace
         self.__batch_gen_param_trigger=batch_gen_param
+    def getBatchSize(self):
+        return self.__batchSize
     def radialfeature(self,stateSpace):
         myExpParams=expParameters()
         myradialBasis=radialBasisFunctions(stateSpace,myExpParams.means,myExpParams.sigmas)
@@ -198,15 +201,19 @@ class experiment():
             featureMatrix=numpy.reshape(aggFeatureMatrix,(aggregatedDim,len(stateSpace))) 
         return featureMatrix.T
     
-    def LSW_subSampleAggregateExperiment(self, mdp,batchSize,maxTrajectoryLenghth,numberOfsubSamples,s,epsilon,delta,Phi,distUB):   
+    def LSW_subSampleAggregateExperiment(self, mdp,batchSize,maxTrajectoryLenghth,numberOfsubSamples,epsilon_star,delta_star, delta_prime,Phi,subSampleSize):   
         myMCPE=MCPE(mdp,self.__Phi,self.__policy)
         V = myMCPE.realV(mdp)
         rho = mdp.startStateDistribution()
+        
+        epsilon = math.log(1.5+math.sqrt(0.25+(batchSize*epsilon_star)/(math.sqrt(8*subSampleSize)*math.log(1/delta_prime))))
+        delta= (batchSize*(delta_star-delta_prime)/(subSampleSize*numberOfsubSamples))*(1/(1.5+math.sqrt(0.25+(batchSize*epsilon_star)/(math.sqrt(8*subSampleSize)*math.log(1/delta_prime)))))
         
         resultsDPSA=[]
         resultsSA=[]
         temFVMC=[]
         DPLSW_result=[]
+        tempMCPE=[0,0]
         for k in range(self.__numrounds):
             if (self.__batch_gen_param_trigger=="Y"):
                 S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
@@ -214,7 +221,7 @@ class experiment():
                 S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
             DPLSW_result.append(numpy.mat(Phi)*numpy.mat(myMCPE.DPLSW(FVMC[0], FVMC[1], mdp, self.__Phi, mdp.getGamma(), epsilon, delta,batchSize)[0]).T)
-            tempMCPE=myMCPE.LSW_subSampleAggregate(S, s, numberOfsubSamples,mdp,self.getPhi(), batchSize, FVMC[2],epsilon,delta,distUB)
+            tempMCPE=myMCPE.LSW_subSampleAggregate(S, numberOfsubSamples,mdp,self.getPhi(),epsilon,delta,subSampleSize)
             resultsDPSA.append(tempMCPE[0])
             resultsSA.append(tempMCPE[1])
             temFVMC.append(numpy.mat(Phi)*numpy.mat(FVMC[0]))
@@ -248,8 +255,7 @@ class experiment():
             temLSL.append(numpy.mat(Phi)*numpy.mat(LSL_result))
             tempDPLSL.append(numpy.mat(Phi)*numpy.mat(DPLSL_result))
         return [resultsDPSA,resultsSA,temLSL,V,tempDPLSL]
-            
-    
+               
     def rewardfunc (self, destState, goalstates, maxReward):
         if destState in goalstates:
             return maxReward
@@ -507,9 +513,7 @@ def run_lstdExperiment(myMDP_Params, myExp_Params,myMDP,lambda_coef):
         theta_hat=myMCPE.LSTD_lambda(myExp.getPhi(), lambda_coef, myMDP, data[i])
         print(theta_hat)
 
-
-
-def SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,exp):
+def SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,exp, subSampleSize):
     expResultsDPSA=[]
     expResultsSA=[]
     expResultsLSW=[]
@@ -518,7 +522,7 @@ def SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, m
     for i in range(len(myExp_Params.experimentBatchLenghts)):
         numberOfsubSamples=int((myExp_Params.experimentBatchLenghts[i])**exp)
         s=int(numpy.sqrt(numberOfsubSamples))
-        tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),myExp_Params.distUB)
+        tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),subSampleSize)
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
         expResultsLSW.append(tempSAE[2])
@@ -602,14 +606,14 @@ def SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, m
     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
     plt.show()
     
-
-def run_SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP):
+def run_SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,subSampleSize):
     exps=[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]
+     
     resultsLSW=[]
     reultsSA=[]
     for exp in exps:
-        resultsLSW.append(SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,exp)[2])
-        reultsSA.append(SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,exp)[3])
+        resultsLSW.append(SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,exp)[2],subSampleSize)
+        reultsSA.append(SALSW_numSubs_experimet(experimentList, myMCPE,myMDP_Params, myExp_Params, myMDP,exp)[3],subSampleSize)
     ax = plt.gca()
     ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
     #for i in len(exps):
@@ -635,10 +639,10 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
     expResultsV=[]
     expResultsDPLSW=[]
     #numberOfsubSamples=1
+    subSampleSize=math.floor((experimentList[0].getBatchSize())**(3.0/4.0))
     for i in range(len(myExp_Params.experimentBatchLenghts)):
         numberOfsubSamples=int(math.pow(myExp_Params.experimentBatchLenghts[i],0.8))
-        s=int(numpy.sqrt(numberOfsubSamples))
-        tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,s,myExp_Params.epsilon,myExp_Params.delta,experimentList[0].getPhi(),myExp_Params.distUB)
+        tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,myExp_Params.epsilon,myExp_Params.delta, myExp_Params.delta_prime,experimentList[0].getPhi(),subSampleSize)
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
         expResultsLSW.append(tempSAE[2])
@@ -726,17 +730,17 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
         
         
     
-    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  yerr=[V_vs_LSW_bldu, V_vs_LSW_bldl])
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPLSW_blm,  yerr=[V_vs_DPLSW_bldu, V_vs_DPLSW_bldl])
-    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  yerr=[V_vs_SA_bldu, V_vs_SA_bldl])
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  yerr=[V_vs_DPSA_bldu, V_vs_DPSA_bldl])
+    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  yerr=[V_vs_LSW_bldu, V_vs_LSW_bldl])
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPLSW_blm,  yerr=[V_vs_DPLSW_bldu, V_vs_DPLSW_bldl])
+    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  yerr=[V_vs_SA_bldu, V_vs_SA_bldl])
+    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  yerr=[V_vs_DPSA_bldu, V_vs_DPSA_bldl])
     
 
     ax.set_xscale('log')
     plt.ylabel('(log) RMSE)')
     plt.xlabel('(log) Batch Size')
     #plt.legend(["LSW-Real", "DPLSW-Real", "(LSW)SA-Real", "(LSW)DPSA-Real"],loc=10)
-    plt.legend(["LSW-Real", "SALSW-Real"],loc=10)
+    plt.legend(["DPLSW vs. True", "DP-SALSW vs. True"],loc=1)
     #plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)")
     #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
@@ -1000,9 +1004,9 @@ def main():
     
     dim=len(featureMatrix.T)
     #Starting the MC-Chain construction
-    myMDP = MChain(stateSpace, myExps[0].TransitionFunction, myExps[0].rewardfunc, goalStates, absorbingStates, myMDP_Params.gamma, myMDP_Params.maxReward)
+    myMDP = MChain(stateSpace, myExps[0].TransitionFunction, myExps[0].rewardfunc, goalStates, absorbingStates, myMDP_Params.gamma_factor, myMDP_Params.maxReward)
     myMCPE=MCPE(myMDP,myExps[len(myExp_Params.experimentBatchLenghts)-1].getPhi(),myExps[len(myExp_Params.experimentBatchLenghts)-1].getPolicy(),"N")
-    #myMCPE.batchGen(myMDP, myExp_Params.maxTrajLength, 10, myMDP_Params.gamma)
+    #myMCPE.batchGen(myMDP, myExp_Params.maxTrajLength, 10, myMDP_Params.gamma_factor)
     #Weight vector is used for averaging
     weightVector=[]
     for i in range(myMDP_Params.numState):
