@@ -636,9 +636,10 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
     expResultsV=[]
     expResultsDPLSW=[]
     #numberOfsubSamples=1
-    subSampleSize=math.floor((experimentList[0].getBatchSize())**(3.0/4.0))
+    
     for i in range(len(myExp_Params.experimentBatchLenghts)):
-        numberOfsubSamples=int(math.pow(myExp_Params.experimentBatchLenghts[i],0.8))
+        numberOfsubSamples=int(math.pow(myExp_Params.experimentBatchLenghts[i],4/3))
+        subSampleSize=int(math.pow(myExp_Params.experimentBatchLenghts[i],0.75))
         tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,myExp_Params.epsilon,myExp_Params.delta, myExp_Params.delta_prime,experimentList[0].getPhi(),subSampleSize)
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
