@@ -14,10 +14,8 @@ class expParameters(object):
         
         self.maxTrajLength=200
         self.minNumberTraj=100
-        self.numRounds=2
-        self.experimentBatchLenghts=[1000, 1500, 2500]#10,500,1000,1500,2000,2500,3000,5000] 
-        self.k_exp= 0.67
-        self.m_exp=[0.67,1,4/3,5/3]#,2,7/3]
+        self.numRounds=5
+        self.experimentBatchLenghts=[10,500,1000,1500,2000,2500,3000,4000]#,5000] 
         self.epsilon=0.1
         self.delta=0.15
         self.delta_prime=0.1
