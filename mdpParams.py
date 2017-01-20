@@ -9,7 +9,6 @@ class mdpParameteres(object):
     classdocs
     '''
 
-
     def __init__(self):
         self.initDist="uniform"
         self.numState= 40

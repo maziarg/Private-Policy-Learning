@@ -9,19 +9,14 @@ import numpy
 import matplotlib.pyplot as plt
 from numpy import math, Inf, reshape
 from scipy import  linalg
-from decimal import Decimal
-from sklearn.metrics import mean_squared_error
 from Evaluator import MCPE
 from expParams import expParameters
 from mdpParams import mdpParameteres
 from IPython.core.tests.test_formatters import numpy
 from radialBasis import  radialBasisFunctions
-#from curses.has_key import python
-#import seaborn as sns
 
 class experiment():
     def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy="uniform", batch_gen_param="N"):
-        #self.__Phi=self.featureProducer(aggregationFactor, stateSpace)
         self.__Phi=self.featureProducer(aggregationFactor, stateSpace)
         self.__epsilon=epsilon
         self.__delta=delta
@@ -31,8 +26,10 @@ class experiment():
         self.__policy=policy
         self.__stateSpace=stateSpace
         self.__batch_gen_param_trigger=batch_gen_param
+
     def getBatchSize(self):
         return self.__batchSize
+    
     def radialfeature(self,stateSpace):
         myExpParams=expParameters()
         myradialBasis=radialBasisFunctions(stateSpace,myExpParams.means,myExpParams.sigmas)
@@ -215,7 +212,7 @@ class experiment():
             if (self.__batch_gen_param_trigger=="Y"):
                 S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
             else:
-                S= myMCPE.batchCutoff("huge_batch.txt", batchSize)
+                S= myMCPE.batchCutoff("newBatch.txt", batchSize)
             FVMC = myMCPE.FVMCPE(mdp, self.__Phi, S)
             DPLSW_result.append(numpy.mat(Phi)*numpy.mat(myMCPE.DPLSW(FVMC[0], FVMC[1], mdp, self.__Phi, mdp.getGamma(), epsilon_star, delta_star,batchSize)[0]).T)
             tempMCPE=myMCPE.LSW_subSampleAggregate(S, numberOfsubSamples,mdp,self.getPhi(),epsilon,delta,subSampleSize)
@@ -635,11 +632,15 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
     expResultsLSW=[]
     expResultsV=[]
     expResultsDPLSW=[]
-    #numberOfsubSamples=1
+    
+    numberOfsubSamples_Exponent= 4.0/3.0
+    subSampleSize_exponent=0.75
+    
+    #Note that as theory suggests numberOfsubSamples_Exponent*subSampleSize_exponent=2
     
     for i in range(len(myExp_Params.experimentBatchLenghts)):
-        numberOfsubSamples=int(math.pow(myExp_Params.experimentBatchLenghts[i],4/3))
-        subSampleSize=int(math.pow(myExp_Params.experimentBatchLenghts[i],0.75))
+        numberOfsubSamples=math.floor(math.pow(myExp_Params.experimentBatchLenghts[i],numberOfsubSamples_Exponent))
+        subSampleSize=math.floor(math.pow(myExp_Params.experimentBatchLenghts[i],subSampleSize_exponent))
         tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,myExp_Params.epsilon,myExp_Params.delta, myExp_Params.delta_prime,experimentList[0].getPhi(),subSampleSize)
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
@@ -647,7 +648,7 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
         expResultsV.append(tempSAE[3])
         expResultsDPLSW.append(tempSAE[4])
     ax = plt.gca()
-    ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
+    ax.set_color_cycle(['b', 'r--', 'g', 'c--', 'k', 'y--', 'm'])
     
     
     
@@ -688,17 +689,8 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
             vhatDPLSW=numpy.reshape(expResultsDPLSW[j][k],(dim,1))
             tempDPLSW[j].append(myMCPE.weighted_dif_L2_norm(myMDP, tempV, vhatDPLSW))
             
-        #tempDPSA=tempDPSA/myExp_Params.numRounds
-        #tempSA=tempSA/myExp_Params.numRounds
-        #tempLSW=tempLSW/myExp_Params.numRounds
-        
-        
             
-        #mean_V_vs_LSW[j]=numpy.average(tempLSW-tempV)
-        #std_V_vs_LSW[j] = numpy.std(tempLSW-tempV)#bld
-        #V_vs_LSW_bldu[j] = math.log10(abs(mean_V_vs_LSW[j]+std_V_vs_LSW[j]))-math.log10(abs(mean_V_vs_LSW[j]))
-        #V_vs_LSW_bldl[j] = -math.log10(abs(mean_V_vs_LSW[j]-std_V_vs_LSW[j]))+math.log10(abs(mean_V_vs_LSW[j]))
-        #V_vs_LSW_blm[j] = math.log10(abs(mean_V_vs_LSW[j]))   
+             
         temptemp=tempLSW[j]
         mean_V_vs_LSW[j]=abs(numpy.average(temptemp))
         std_V_vs_LSW[j] = numpy.std(temptemp)
@@ -969,20 +961,11 @@ def main():
     #######################MDP Parameters and Experiment setup###############################
     myExp_Params=expParameters()
     myMDP_Params=mdpParameteres()
-    #if the absorbing state is anything except 19 the trajectory will not terminate
+    #if the absorbing state is anything except 39 (goal-state) the trajectory will not terminate
     absorbingStates=[]
     absorbingStates.append(myMDP_Params.numState-1)    
-    goalStates=[myMDP_Params.numState-2] 
-    #i=0
-    #while i < myMDP_Params.numGoalstates:
-    #    sRand=numpy.random.randint(0,myMDP_Params.numState)
-    #    if sRand not in goalStates:
-    #        goalStates.append(sRand)
-    #       i=i+1  
-    #    else:
-    #       continue     
+    goalStates=[myMDP_Params.numState-2]     
     stateSpace=numpy.ones(myMDP_Params.numState)
-    #To DO:Fix this part, since states should be in {0,1} 
     for i in range(myMDP_Params.numState):
         stateSpace[i]=i
     stateSpace=numpy.reshape(stateSpace, (myMDP_Params.numState,1))
@@ -1004,7 +987,6 @@ def main():
     #Starting the MC-Chain construction
     myMDP = MChain(stateSpace, myExps[0].TransitionFunction, myExps[0].rewardfunc, goalStates, absorbingStates, myMDP_Params.gamma_factor, myMDP_Params.maxReward)
     myMCPE=MCPE(myMDP,myExps[len(myExp_Params.experimentBatchLenghts)-1].getPhi(),myExps[len(myExp_Params.experimentBatchLenghts)-1].getPolicy(),"N")
-    #myMCPE.batchGen(myMDP, myExp_Params.maxTrajLength, 10, myMDP_Params.gamma_factor)
     #Weight vector is used for averaging
     weightVector=[]
     for i in range(myMDP_Params.numState):

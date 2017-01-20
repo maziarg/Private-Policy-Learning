@@ -5,30 +5,19 @@ import scipy
 import matplotlib.pyplot as plt
 from numpy import math, Inf, reshape, ravel
 from scipy import  linalg
-from decimal import Decimal
-from sklearn.metrics import mean_squared_error
-from matplotlib.cbook import todatetime
 import os
-import time
-import sys
-from datashape.coretypes import float64
-from decimal import getcontext
 from expParams import expParameters
 from mdpParams import mdpParameteres
-import simplejson
-import re
-from math import gamma
-from blaze import nan
 from scipy.spatial.distance import cdist, euclidean
-
+from simpleMC import MChain
 
 '''
 Created on Jan 17, 2016
 
 @author: mgomrokchi
 '''
-from simpleMC import MChain
-from scipy.cluster.hierarchy import maxdists
+
+
 class MCPE():
     def __init__(self, mdp, featureMatrix, policy, batch_gen_trigger="N", huge_batch_name="huge_batch.txt"):
         self.gamma_factor=mdp.getGamma()
@@ -41,7 +30,7 @@ class MCPE():
         self.batch_gen_trigger=batch_gen_trigger
         #To Do: 200 is set manually here, which is wrong, this needs to be fixed
         if batch_gen_trigger=="Y":
-            self.InitHugeBatch= self.batchGen(mdp, 200, 5000, self.gamma_factor, self.pi, mdp.startStateDistribution())
+            self.InitHugeBatch= self.batchGen(mdp, 200, 50000, self.gamma_factor, self.pi, mdp.startStateDistribution())
             self.batch_gen_trigger="N"
             
     def FirstVisit(self,trajectory, state, gamma):
@@ -49,7 +38,6 @@ class MCPE():
         count=0
         reward=0
         temp=[]
-        #finding the index of a state in the given trajectory 
         for i in trajectory:
             if state == int(i.split('-')[0]):
                 sIndexOfTau=count
@@ -242,11 +230,8 @@ class MCPE():
         thetaTild_priv=thetaTild+ethaX
         return [thetaTild_priv,thetaTild,math.pow(sigmmaX,2)]
     
-    
-    
     def weighted_dif_L2_norm(self, mdp, v ,vhat):
-        #v=v.flatten()
-        #vhat=vhat.flatten()
+
         Gamma = mdp.getGammaMatrix()
         temp1=numpy.mat((numpy.ravel(v)-numpy.ravel(vhat)))*numpy.mat(Gamma)
         temp=temp1*numpy.mat(numpy.ravel(v)-numpy.ravel(vhat)).T
@@ -361,21 +346,15 @@ class MCPE():
         return [x for i, x in enumerate(thefile) if i in whatlines]
     
     def subSampleGen(self,batch, numberOfsubSamples, subSampelSize):
-        #n=len(batch)
-        #residue= n - subSampelSize*numberOfsubSamples
+
         subSamples=[]
         for i in range(numberOfsubSamples):
             subSamples.append(numpy.random.choice(batch, size=subSampelSize, replace=False))
-        #if residue is not 0:
-        #    subSamples.append(numpy.random.choice(batch, size=residue, replace=False))
         return subSamples
     def rDist(self,mdp,c, z,t_init, distance_upper_bound):#returns the t_init th distace of c to z and its value 
         distS=[]
         for i in range(len(z)):
             distS.append([linalg.norm(c-z[i]),i])
-#        if t_init > tempSize:
-#            return distance_upper_bound
-#        else:
         a=sorted(distS, key=self.getKey)
         return [c,a[t_init-1][0]]
          
@@ -479,7 +458,7 @@ class MCPE():
         g=numpy.zeros((len(subSamples),len(featuresMatrix)))
         for i in range(len(subSamples)):
             FVMC=self.FVMCPE(myMDP, featuresMatrix, subSamples[i])
-            DPLSWTemp= self.DPLSW(FVMC[0], FVMC[1], myMDP, featuresMatrix, gamma, epsilon, delta, subSampleSize, "uniform", "uniform")
+            DPLSWTemp= self.DPLSW(FVMC[0], FVMC[1], myMDP, featuresMatrix, myMDP.getGamma(), epsilon, delta, subSampleSize, "uniform", "uniform")
             g[i]= ravel(numpy.mat(featuresMatrix)*numpy.mat(FVMC[0]))
             z[i]= ravel(numpy.mat(featuresMatrix)*numpy.mat(DPLSWTemp[0]).T)#this is LSW
         tempAddz=numpy.zeros(dim)
