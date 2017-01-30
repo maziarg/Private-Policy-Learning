@@ -28,9 +28,10 @@ class MCPE():
         self.featureMatrix=featureMatrix
         self.huge_batch_name=huge_batch_name
         self.batch_gen_trigger=batch_gen_trigger
+        self.maxBatchLength=49999
         #To Do: 200 is set manually here, which is wrong, this needs to be fixed
         if batch_gen_trigger=="Y":
-            self.InitHugeBatch= self.batchGen(mdp, 200, 50000, self.gamma_factor, self.pi, mdp.startStateDistribution())
+            self.InitHugeBatch= self.batchGen(mdp, 200, self.maxBatchLength, self.gamma_factor, self.pi, mdp.startStateDistribution())
             self.batch_gen_trigger="N"
             
     def FirstVisit(self,trajectory, state, gamma):
@@ -329,14 +330,14 @@ class MCPE():
     
     def batchCutoff(self, filename, numTrajectories):
         miniBatch = [[ ] for y in range(numTrajectories)]
-        randIndecies=numpy.random.choice(5000, (1,numTrajectories), replace=False)
+        randIndecies=numpy.random.choice(self.maxBatchLength, (1,numTrajectories), replace=False)
         batch_file = open(filename, "r")
         newbatch=self.picklines(batch_file, randIndecies[0])
         for i in range(numTrajectories):
             #newLine=batch_file.readline(randIndecies[i])
             newLine=newbatch[i]
             if newLine=="\n":
-                lIndex=numpy.random.choice(5000, replace=False)
+                lIndex=numpy.random.choice(self.maxBatchLength, replace=False)
                 newLine=self.picklines(batch_file, lIndex) 
             miniBatch[i]=newLine.split(',')
         #Here I have to convert it to trajectories of ints and then return it

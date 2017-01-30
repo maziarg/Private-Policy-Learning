@@ -14,6 +14,8 @@ from expParams import expParameters
 from mdpParams import mdpParameteres
 from IPython.core.tests.test_formatters import numpy
 from radialBasis import  radialBasisFunctions
+import csv
+
 
 class experiment():
     def __init__(self, aggregationFactor,stateSpace,epsilon, delta, lambdaClass, numRounds, batchSize,policy="uniform", batch_gen_param="N"):
@@ -209,6 +211,7 @@ class experiment():
         DPLSW_result=[]
         tempMCPE=[0,0]
         for k in range(self.__numrounds):
+            #print("round"+str(k)+"has started")
             if (self.__batch_gen_param_trigger=="Y"):
                 S = myMCPE.batchGen(mdp, maxTrajectoryLenghth, batchSize, mdp.getGamma(), self.__policy, rho)  
             else:
@@ -642,13 +645,14 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
         numberOfsubSamples=math.floor(math.pow(myExp_Params.experimentBatchLenghts[i],numberOfsubSamples_Exponent))
         subSampleSize=math.floor(math.pow(myExp_Params.experimentBatchLenghts[i],subSampleSize_exponent))
         tempSAE=experimentList[i].LSW_subSampleAggregateExperiment(myMDP,myExp_Params.experimentBatchLenghts[i],myExp_Params.maxTrajLength,numberOfsubSamples,myExp_Params.epsilon,myExp_Params.delta, myExp_Params.delta_prime,experimentList[0].getPhi(),subSampleSize)
+        #print("exp "+str(i)+"is done")
         expResultsDPSA.append(tempSAE[0])
         expResultsSA.append(tempSAE[1])
         expResultsLSW.append(tempSAE[2])
         expResultsV.append(tempSAE[3])
         expResultsDPLSW.append(tempSAE[4])
-    ax = plt.gca()
-    ax.set_color_cycle(['b', 'r--', 'g', 'c--', 'k', 'y--', 'm'])
+    #ax = plt.gca()
+    #ax.set_color_cycle(['b', 'r', 'g', 'c', 'k', 'y', 'm'])
     
     
     
@@ -718,23 +722,30 @@ def run_LSW_SubSampAggExperiment(experimentList, myMCPE,myMDP_Params, myExp_Para
         V_vs_SA_blm[j] = math.log10((mean_V_vs_SA[j]))
         
         
-        
+    with open('finalResult.csv', 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        fieldnames =['Lower Bound','Mean','Upper Bound']
+        writer.writerow(fieldnames)
+        #for per in range(2):
+        writer.writerow([V_vs_DPLSW_bldl[0], V_vs_DPLSW_blm[0], V_vs_DPLSW_bldu[0]]) 
+        writer.writerow([V_vs_DPSA_bldl[0], V_vs_DPSA_blm[0], V_vs_DPSA_bldu[0]]) 
     
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  yerr=[V_vs_LSW_bldu, V_vs_LSW_bldl])
-    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPLSW_blm,  yerr=[V_vs_DPLSW_bldu, V_vs_DPLSW_bldl])
-    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  yerr=[V_vs_SA_bldu, V_vs_SA_bldl])
-    ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  yerr=[V_vs_DPSA_bldu, V_vs_DPSA_bldl])
+    ##ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_LSW_blm,  yerr=[V_vs_LSW_bldu, V_vs_LSW_bldl])
+    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPLSW_blm,  yerr=[V_vs_DPLSW_bldu, V_vs_DPLSW_bldl])
+    ##ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_SA_blm,  yerr=[V_vs_SA_bldu, V_vs_SA_bldl])
+    #ax.errorbar(myExp_Params.experimentBatchLenghts, V_vs_DPSA_blm,  yerr=[V_vs_DPSA_bldu, V_vs_DPSA_bldl])
     
 
-    ax.set_xscale('log')
-    plt.ylabel('(log) RMSE)')
-    plt.xlabel('(log) Batch Size')
-    #plt.legend(["LSW-Real", "DPLSW-Real", "(LSW)SA-Real", "(LSW)DPSA-Real"],loc=10)
-    plt.legend(["DPLSW vs. True", "SA-DPLSW vs. True"],loc=1)
-    #plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)")
-    #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
-    #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
-    plt.show()
+#     ax.set_xscale('log')
+#     plt.ylabel('(log) RMSE)')
+#     plt.xlabel('(log) Batch Size')
+#     #plt.legend(["LSW-Real", "DPLSW-Real", "(LSW)SA-Real", "(LSW)DPSA-Real"],loc=10)
+#     plt.legend(["DPLSW vs. True", "SA-DPLSW vs. True"],loc=1)
+#     #plt.title("epsilon= "+str(myExp_Params.epsilon)+", delta= "+str(myExp_Params.delta)+", number of sub samples: \sqrt(m)")
+#     #ax.plot(myExp_Params.experimentBatchLenghts,realV_vs_FVMC)
+#     #ax.plot(myExp_Params.experimentBatchLenghts,LSL_vs_DPLSL)
+#     plt.savefig('results')
+#     #plt.show()
     
 def run_SubSampleAggregtate_LSL_LambdaExperiment(experimentList, myMDP, myExp_Params,myMCP,Phi):
     
